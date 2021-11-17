@@ -22,11 +22,11 @@ a colorized report to stdout at the same time:
   --output-format=json:somefile.json,colorized
 
 Finally, it is possible to invoke pylint programatically with
-a custom reporter, for example:
+reporter initialized with a custom stream, for example:
 
 ::
 
-  pylint_output = StringIO()
+  pylint_output = StringIO() # Custom open stream
   reporter = text.TextReporter(pylint_output)
   Run(["test_file.py"], reporter=reporter, do_exit=False)
   print(pylint_output.getvalue()) # Retrieve and print the text report
