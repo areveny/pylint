@@ -185,15 +185,14 @@ def get_cycles(graph_dict, vertices=None):
         _get_cycles(graph_dict, [], set(), result, vertice)
     return result
 
-
 def _get_cycles(graph_dict, path, visited, result, vertice):
     """Recursive function doing the real work for get_cycles."""
     if vertice in path:
-        cycle = [vertice]
+        cycle = [str(vertice)]
         for node in path[::-1]:
             if node == vertice:
                 break
-            cycle.insert(0, node)
+            cycle.insert(0, str(node))
         # make a canonical representation
         start_from = min(cycle)
         index = cycle.index(start_from)
@@ -227,23 +226,40 @@ def handle_cycles(graph_dict, symbol_dict, cycles):
 def get_paths(graph_dict, indegree_dict):
     indegree_zero = [node for node in indegree_dict if indegree_dict[node] == 0]
     visited = {node: False for node in graph_dict}
-    paths = []
+    paths = set()
     while indegree_zero:
         path = []
         get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero, visited)
-        paths.append(path)
+        if not all(isinstance(item, (int, float)) for item in path):
+            path = strip_path(path)
+            if len(path) > 1:
+                paths.add(tuple(path))
     return paths
 
 def get_path(path, graph_dict, node, indegree_dict, indegree_zero, visited):
     path.append(node)
-    visited[node] = indegree_dict[node] == 0
+    visited[node] = True
     indegree_dict[node] = max(indegree_dict[node] - 1, 0)
-    adj = [a for a in graph_dict[node] if indegree_dict[a] != 0]
+
+    # Sorting makes the results deterministic, also, always visit variable nodes before numerical ones
+    adj = sorted([a for a in graph_dict[node] if indegree_dict[a] != 0], reverse=True, key=str)
     if indegree_dict[node] == 0 and len(adj) >= 2:
         indegree_zero.append(node) # This will visit adj[1] when we pop it
     if len(adj) >= 1 and not indegree_dict[adj[0]] == 0:
+        graph_dict[node].remove(adj[0])
         get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero, visited)
 
+def strip_path(path):
+    low = 0
+    high = len(path) - 1
+    if path and isinstance(path[0], (int, float)):
+        while low < len(path) - 1 and isinstance(path[low], (int, float)) and isinstance(path[low+1], (int, float)):
+            low += 1
+
+    if path and isinstance(path[-1], (int, float)):
+        while high > 0 and high > low and isinstance(path[high], (int, float)) and isinstance(path[high-1], (int, float)):
+            high -= 1
+    return path[low:high+1]
 
 import collections
 from astroid import nodes
@@ -315,7 +331,7 @@ def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[in
 
 import astroid
 node = astroid.extract_node("""
-if a < 20 and a < 50:
+if a < 20 and 10 < a < 15 and 8 < b < 20 and 8 < c < d < 15 and 15 < e:
     pass
 """
     )
@@ -327,5 +343,6 @@ print(indegree_dict)
 cycles = get_cycles(graph_dict)
 print("cycles", cycles)
 
-paths = get_paths(graph_dict, indegree_dict)
-print("paths", paths)
+if len(cycles) == 0:
+    paths = get_paths(graph_dict, indegree_dict)
+    print("paths", paths)
