@@ -225,29 +225,43 @@ def handle_cycles(graph_dict, symbol_dict, cycles):
 
 def get_paths(graph_dict, indegree_dict):
     indegree_zero = [node for node in indegree_dict if indegree_dict[node] == 0]
-    visited = {node: False for node in graph_dict}
     paths = set()
     while indegree_zero:
         path = []
-        get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero, visited)
+        get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero)
+        print(path)
         if not all(isinstance(item, (int, float)) for item in path):
+
+            # Backtrack to remove redundant links
+            for i, item in enumerate(path):
+                if isinstance(item, str):
+                # if True:
+                    for val in path[:i]:
+                        graph_dict[val].discard(item)
+
             path = strip_path(path)
             if len(path) > 1:
                 paths.add(tuple(path))
     return paths
 
-def get_path(path, graph_dict, node, indegree_dict, indegree_zero, visited):
+def get_path(path, graph_dict, node, indegree_dict, indegree_zero):
     path.append(node)
-    visited[node] = True
     indegree_dict[node] = max(indegree_dict[node] - 1, 0)
 
     # Sorting makes the results deterministic, also, always visit variable nodes before numerical ones
-    adj = sorted([a for a in graph_dict[node] if indegree_dict[a] != 0], reverse=True, key=str)
+    adj = sorted([a for a in graph_dict[node] if indegree_dict[a] != 0], reverse=False, key=str)
     if indegree_dict[node] == 0 and len(adj) >= 2:
-        indegree_zero.append(node) # This will visit adj[1] when we pop it
-    if len(adj) >= 1 and not indegree_dict[adj[0]] == 0:
-        graph_dict[node].remove(adj[0])
-        get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero, visited)
+        copied = list(path)
+        cur = copied.pop()
+        while copied and isinstance(copied[-1], (int, float)):
+        # while copied:
+            cur = copied.pop()
+        indegree_zero.append(cur) # This will visit adj[1] when we pop it
+
+    # if len(adj) >= 1 and not indegree_dict[adj[0]] == 0:
+    if len(adj) >= 1:
+        # graph_dict[node].remove(adj[0])
+        get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero)
 
 def strip_path(path):
     low = 0
@@ -270,9 +284,7 @@ def optimize_boolop(node: nodes.BoolOp):
     graph_dict = collections.defaultdict(set)
     symbol_dict = {}
     indegree_dict = collections.defaultdict(int)
-    const_values: set[int] = set()
-
-    intersected = False
+    const_values: list[int] = []
 
     for statement in node.values:
         ops = list(statement.ops)
@@ -308,14 +320,14 @@ def optimize_boolop(node: nodes.BoolOp):
             left_statement = right_statement
 
     # Link up constant nodes
-    sorted_consts = sorted(const_values, reverse=True)
-    for largest in sorted_consts:
-        const_values.remove(largest)
-        if const_values:
-            for smaller in const_values:
+    sorted_consts = sorted(const_values)
+    while sorted_consts:
+        largest = sorted_consts.pop()
+        for smaller in set(sorted_consts):
+            if smaller < largest:
                 symbol_dict[(largest, smaller)] = ">"
                 indegree_dict[smaller] += 1
-            graph_dict[largest] = graph_dict[largest].union(const_values)
+                graph_dict[largest].add(smaller)
 
     return graph_dict, symbol_dict, indegree_dict
 
@@ -325,16 +337,37 @@ def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[in
         value = node.name
     elif isinstance(node, nodes.Const):
         value = node.value
-        const_values.add(value)
+        const_values.append(value)
     # elif #Walrus
     return value
 
 import astroid
-node = astroid.extract_node("""
-if a < 20 and 10 < a < 15 and 8 < b < 20 and 8 < c < d < 15 and 15 < e:
+node1 = astroid.extract_node("""
+if a < 20 and a < 15 and d < 15 and 15 < e:
     pass
-"""
-    )
+""")
+
+node2 = astroid.extract_node("""
+if a < 20 and a < 15 and d < 15 and 15 < e < 20:
+    pass
+""")
+
+node3 = astroid.extract_node("""
+if a < 20 and a < 15:
+    pass
+""")
+
+node4 = astroid.extract_node("""
+if a < 20 and a < 15 and b < 20 and b < 15:
+    pass
+""")
+
+node5 = astroid.extract_node("""
+if a < b and a < c < d and c < 20 and b < d and d < f:
+    pass
+""")
+node = node5
+
 
 graph_dict, symbol_dict, indegree_dict = optimize_boolop(node.test)
 print(graph_dict)
