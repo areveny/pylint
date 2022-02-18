@@ -212,3 +212,120 @@ def _get_cycles(graph_dict, path, visited, result, vertice):
     except KeyError:
         pass
     path.pop()
+
+# symbol_dict: Dict[Tuple[str, str], str]
+# Where the value is ">=", ">", "<=", "<"
+def handle_cycles(graph_dict, symbol_dict, cycles):
+    for cycle in cycles:
+        all_geq = all(symbol_dict[(cycle[i], cycle[i+1])] == ">=" for (i, _) in enumerate(cycle) if i < len(cycle) - 1)
+        all_geq = all_geq and symbol_dict[cycle[-1], cycle[0]] == ">="
+        if all_geq:
+            print("Pylint simplify")
+        else:
+            print("Pylint bad cycle")
+
+def get_paths(graph_dict, indegree_dict):
+    indegree_zero = [node for node in indegree_dict if indegree_dict[node] == 0]
+    visited = {node: False for node in graph_dict}
+    paths = []
+    while indegree_zero:
+        path = []
+        get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero, visited)
+        paths.append(path)
+    return paths
+
+def get_path(path, graph_dict, node, indegree_dict, indegree_zero, visited):
+    path.append(node)
+    visited[node] = indegree_dict[node] == 0
+    indegree_dict[node] = max(indegree_dict[node] - 1, 0)
+    adj = [a for a in graph_dict[node] if indegree_dict[a] != 0]
+    if indegree_dict[node] == 0 and len(adj) >= 2:
+        indegree_zero.append(node) # This will visit adj[1] when we pop it
+    if len(adj) >= 1 and not indegree_dict[adj[0]] == 0:
+        get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero, visited)
+
+
+import collections
+from astroid import nodes
+def optimize_boolop(node: nodes.BoolOp):
+    if node.op != 'and' or len(node.values) < 2:
+        return
+
+    graph_dict = collections.defaultdict(set)
+    symbol_dict = {}
+    indegree_dict = collections.defaultdict(int)
+    const_values: set[int] = set()
+
+    intersected = False
+
+    for statement in node.values:
+        ops = list(statement.ops)
+        left_statement = statement.left
+        while ops:
+            if not isinstance(statement, nodes.Compare):
+                continue
+
+            left = get_compare_operand_value(left_statement, const_values)
+            if left is None:
+                continue
+
+            operator, right_statement = ops.pop(0)
+            right = get_compare_operand_value(right_statement, const_values)
+            if right is None:
+                continue
+
+            # Make the graph always point from larger to smaller
+            if operator == "<":
+                operator = ">"
+                left, right = right, left
+            elif operator == "<=":
+                operator = ">="
+                left, right = right, left
+
+            # Update maps
+            graph_dict[left].add(right)
+            graph_dict[right] # Ensure the node exists in graph
+            symbol_dict[(left, right)] = operator
+            indegree_dict[left] += 0 # Make sure every node has an entry
+            indegree_dict[right] += 1
+
+            left_statement = right_statement
+
+    # Link up constant nodes
+    sorted_consts = sorted(const_values, reverse=True)
+    for largest in sorted_consts:
+        const_values.remove(largest)
+        if const_values:
+            for smaller in const_values:
+                symbol_dict[(largest, smaller)] = ">"
+                indegree_dict[smaller] += 1
+            graph_dict[largest] = graph_dict[largest].union(const_values)
+
+    return graph_dict, symbol_dict, indegree_dict
+
+def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[int]]=None):
+    value = None
+    if isinstance(node, nodes.Name):
+        value = node.name
+    elif isinstance(node, nodes.Const):
+        value = node.value
+        const_values.add(value)
+    # elif #Walrus
+    return value
+
+import astroid
+node = astroid.extract_node("""
+if a < 20 and a < 50:
+    pass
+"""
+    )
+
+graph_dict, symbol_dict, indegree_dict = optimize_boolop(node.test)
+print(graph_dict)
+print(symbol_dict)
+print(indegree_dict)
+cycles = get_cycles(graph_dict)
+print("cycles", cycles)
+
+paths = get_paths(graph_dict, indegree_dict)
+print("paths", paths)
