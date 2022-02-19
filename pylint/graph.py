@@ -223,12 +223,12 @@ def handle_cycles(graph_dict, symbol_dict, cycles):
         else:
             print("Pylint bad cycle")
 
-def get_paths(graph_dict, indegree_dict):
-    indegree_zero = [node for node in indegree_dict if indegree_dict[node] == 0]
+def get_paths(graph_dict, indegree_dict, frequency_dict):
+    indegree_zero = sorted([node for node in indegree_dict if indegree_dict[node] == 0], reverse=False, key=str)
     paths = set()
     while indegree_zero:
         path = []
-        get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero)
+        get_path(path, graph_dict, indegree_zero.pop(), indegree_dict, indegree_zero, frequency_dict)
         print(path)
         if not all(isinstance(item, (int, float)) for item in path):
 
@@ -244,12 +244,12 @@ def get_paths(graph_dict, indegree_dict):
                 paths.add(tuple(path))
     return paths
 
-def get_path(path, graph_dict, node, indegree_dict, indegree_zero):
+def get_path(path, graph_dict, node, indegree_dict, indegree_zero, frequency_dict):
     path.append(node)
     indegree_dict[node] = max(indegree_dict[node] - 1, 0)
 
     # Sorting makes the results deterministic, also, always visit variable nodes before numerical ones
-    adj = sorted([a for a in graph_dict[node] if indegree_dict[a] != 0], reverse=False, key=str)
+    adj = sorted([a for a in graph_dict[node] if frequency_dict[(node, a)] != 0], reverse=False, key=str)
     if indegree_dict[node] == 0 and len(adj) >= 2:
         copied = list(path)
         cur = copied.pop()
@@ -261,7 +261,53 @@ def get_path(path, graph_dict, node, indegree_dict, indegree_zero):
     # if len(adj) >= 1 and not indegree_dict[adj[0]] == 0:
     if len(adj) >= 1:
         # graph_dict[node].remove(adj[0])
-        get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero)
+        frequency_dict[(node, adj[0])] -= 1
+        get_path(path, graph_dict, adj[0], indegree_dict, indegree_zero, frequency_dict)
+
+def get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict):
+    paths = []
+    while indegree_zero:
+        symbols_in_longest_path = {key: 1 if isinstance(key, str) else 0 for key in graph_dict}
+        nodes_in_longest_path = {key: 1 for key in graph_dict}
+        for root in indegree_zero:
+            count_nodes(root, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict)
+        path = []
+        longest_path_item = get_longest_path_item(indegree_zero, symbols_in_longest_path, nodes_in_longest_path)
+        indegree_zero.remove(longest_path_item)
+        get_path_longest(path, graph_dict, longest_path_item, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
+        for i, item in enumerate(path):
+            if True:
+                for val in path[:i]:
+                    # if isinstance(val, str) or isinstance(item, str):
+                    # graph_dict[val].discard(item)
+                    frequency_dict[(val, item)] = max(frequency_dict[(val, item)] - 1, 0)
+        paths.append(path)
+
+    return paths
+
+def get_longest_path_item(items, symbols_in_longest_path, nodes_in_longest_path):
+    return sorted(items, key=lambda x: (symbols_in_longest_path[x], nodes_in_longest_path[x]))[0]
+
+def get_path_longest(path, graph_dict, node, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path):
+    path.append(node)
+    indegree_dict[node] = max(indegree_dict[node] - 1, 0)
+    adj = [a for a in graph_dict[node] if frequency_dict[(node, a)] != 0]
+    if len(adj) >= 1:
+        next = get_longest_path_item(adj, symbols_in_longest_path, nodes_in_longest_path)
+        # frequency_dict[(node, next)] -= 1
+        get_path_longest(path, graph_dict, next, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
+    if indegree_dict[node] == 0 and len(adj) >= 2:
+        indegree_zero.add(node)
+
+def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict):
+    for adj in graph_dict[node]:
+        if frequency_dict[(node, adj)] == 0:
+            continue
+        if isinstance(node, str):
+            symbols_in_longest_path[adj] = max(symbols_in_longest_path[adj], symbols_in_longest_path[node] + 1)
+        nodes_in_longest_path[adj] = max(nodes_in_longest_path[adj], nodes_in_longest_path[node] + 1)
+        count_nodes(adj, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict)
+
 
 def strip_path(path):
     low = 0
@@ -283,6 +329,7 @@ def optimize_boolop(node: nodes.BoolOp):
 
     graph_dict = collections.defaultdict(set)
     symbol_dict = {}
+    frequency_dict = collections.defaultdict(int)
     indegree_dict = collections.defaultdict(int)
     const_values: list[int] = []
 
@@ -316,6 +363,7 @@ def optimize_boolop(node: nodes.BoolOp):
             symbol_dict[(left, right)] = operator
             indegree_dict[left] += 0 # Make sure every node has an entry
             indegree_dict[right] += 1
+            frequency_dict[(left, right)] += 1
 
             left_statement = right_statement
 
@@ -327,9 +375,10 @@ def optimize_boolop(node: nodes.BoolOp):
             if smaller < largest:
                 symbol_dict[(largest, smaller)] = ">"
                 indegree_dict[smaller] += 1
+                frequency_dict[(largest, smaller)] += 1
                 graph_dict[largest].add(smaller)
 
-    return graph_dict, symbol_dict, indegree_dict
+    return graph_dict, symbol_dict, indegree_dict, frequency_dict
 
 def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[int]]=None):
     value = None
@@ -341,41 +390,56 @@ def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[in
     # elif #Walrus
     return value
 
-import astroid
-node1 = astroid.extract_node("""
-if a < 20 and a < 15 and d < 15 and 15 < e:
-    pass
-""")
+if __name__ == "__main__":
+    import astroid
+    node1 = astroid.extract_node("""
+    if a < 20 and a < 15 and d < 15 and 15 < e:
+        pass
+    """)
 
-node2 = astroid.extract_node("""
-if a < 20 and a < 15 and d < 15 and 15 < e < 20:
-    pass
-""")
+    node2 = astroid.extract_node("""
+    if a < 20 and a < 15 and d < 15 and 15 < e < 20:
+        pass
+    """)
 
-node3 = astroid.extract_node("""
-if a < 20 and a < 15:
-    pass
-""")
-
-node4 = astroid.extract_node("""
-if a < 20 and a < 15 and b < 20 and b < 15:
-    pass
-""")
-
-node5 = astroid.extract_node("""
-if a < b and a < c < d and c < 20 and b < d and d < f:
-    pass
-""")
-node = node5
+    node25 = astroid.extract_node("""
+    if d < 15 and a < 15 < e < 20:
+        pass
+    """)
 
 
-graph_dict, symbol_dict, indegree_dict = optimize_boolop(node.test)
-print(graph_dict)
-print(symbol_dict)
-print(indegree_dict)
-cycles = get_cycles(graph_dict)
-print("cycles", cycles)
+    node3 = astroid.extract_node("""
+    if a < 20 and a < 15:
+        pass
+    """)
 
-if len(cycles) == 0:
-    paths = get_paths(graph_dict, indegree_dict)
-    print("paths", paths)
+    node4 = astroid.extract_node("""
+    if a < 20 and a < 15 and b < 20 and b < 15:
+        pass
+    """)
+
+    node5 = astroid.extract_node("""
+    if a < b and a < c < d and c < 20 and b < d and d < f:
+        pass
+    """)
+
+    node6 = astroid.extract_node("""
+    if a < b < c and a < c:
+        pass
+    """)
+    node = node1
+
+    print(node.test.as_string())
+    graph_dict, symbol_dict, indegree_dict, frequency_dict = optimize_boolop(node.test)
+    print(graph_dict)
+    print(symbol_dict)
+    print(indegree_dict)
+    cycles = get_cycles(graph_dict)
+    print("cycles", cycles)
+
+    if len(cycles) == 0:
+        indegree_zero = {node for node in indegree_dict if indegree_dict[node] == 0}
+        paths = get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict)
+
+        # paths = get_paths(graph_dict, indegree_dict, frequency_dict)
+        print("paths", paths)
