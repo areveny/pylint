@@ -16,6 +16,7 @@ from pylint import checkers, interfaces
 from pylint import utils as lint_utils
 from pylint.checkers import utils
 from pylint.checkers.utils import node_frame_class
+from pylint.graph import get_cycles, get_paths
 
 KNOWN_INFINITE_ITERATORS = {"itertools.count"}
 BUILTIN_EXIT_FUNCS = frozenset(("quit", "exit"))
@@ -1220,56 +1221,99 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         self.add_message("consider-using-in", node=node, args=(suggestion,))
 
-    def _check_chained_comparison(self, node):
-        """Check if there is any chained comparison in the expression.
-
-        Add a refactoring message if a boolOp contains comparison like a < b and b < c,
-        which can be chained as a < b < c.
-
-        Care is taken to avoid simplifying a < b < c and b < d.
-        """
-        if node.op != "and" or len(node.values) < 2:
+    def _check_comparisons(self, node: nodes.BoolOp):
+        graph_dict, symbol_dict, indegree_dict, frequency_dict = self._get_graph_from_comparison_nodes(node)
+        cycles = get_cycles(graph_dict)
+        if cycles:
+            self._handle_cycles(symbol_dict, cycles)
             return
 
-        def _find_lower_upper_bounds(comparison_node, uses):
-            left_operand = comparison_node.left
-            for operator, right_operand in comparison_node.ops:
-                for operand in (left_operand, right_operand):
-                    value = None
-                    if isinstance(operand, nodes.Name):
-                        value = operand.name
-                    elif isinstance(operand, nodes.Const):
-                        value = operand.value
+        paths = get_paths(graph_dict, indegree_dict, frequency_dict)
+        print(node.as_string())
+        print(paths)
+        if len(paths) < len(node.values):
+            self.add_message('chained-comparison', node=node)
 
-                    if value is None:
-                        continue
+    def _get_graph_from_comparison_nodes(self, node: nodes.BoolOp):
+        if node.op != 'and' or len(node.values) < 2:
+            return
 
-                    if operator in {"<", "<="}:
-                        if operand is left_operand:
-                            uses[value]["lower_bound"].add(comparison_node)
-                        elif operand is right_operand:
-                            uses[value]["upper_bound"].add(comparison_node)
-                    elif operator in {">", ">="}:
-                        if operand is left_operand:
-                            uses[value]["upper_bound"].add(comparison_node)
-                        elif operand is right_operand:
-                            uses[value]["lower_bound"].add(comparison_node)
-                left_operand = right_operand
+        graph_dict = collections.defaultdict(set)
+        symbol_dict = collections.defaultdict(lambda: ">")
+        frequency_dict = collections.defaultdict(int)
+        indegree_dict = collections.defaultdict(int)
+        const_values: list[int] = []
 
-        uses = collections.defaultdict(
-            lambda: {"lower_bound": set(), "upper_bound": set()}
-        )
-        for comparison_node in node.values:
-            if isinstance(comparison_node, nodes.Compare):
-                _find_lower_upper_bounds(comparison_node, uses)
+        for statement in node.values:
+            ops = list(statement.ops)
+            left_statement = statement.left
+            while ops:
+                if not isinstance(statement, nodes.Compare):
+                    continue
 
-        for _, bounds in uses.items():
-            num_shared = len(bounds["lower_bound"].intersection(bounds["upper_bound"]))
-            num_lower_bounds = len(bounds["lower_bound"])
-            num_upper_bounds = len(bounds["upper_bound"])
-            if num_shared < num_lower_bounds and num_shared < num_upper_bounds:
-                self.add_message("chained-comparison", node=node)
-                break
+                left = self._get_compare_operand_value(left_statement, const_values)
+                if left is None:
+                    continue
+
+                operator, right_statement = ops.pop(0)
+                right = self._get_compare_operand_value(right_statement, const_values)
+                if right is None:
+                    continue
+
+                # Make the graph always point from larger to smaller
+                if operator == "<":
+                    operator = ">"
+                    left, right = right, left
+                elif operator == "<=":
+                    operator = ">="
+                    left, right = right, left
+
+                # Update maps
+                graph_dict[left].add(right)
+                graph_dict[right] # Ensure the node exists in graph
+                symbol_dict[(left, right)] = operator
+                indegree_dict[left] += 0 # Make sure every node has an entry
+                indegree_dict[right] += 1
+                frequency_dict[(left, right)] += 1
+
+                left_statement = right_statement
+
+        # Link up constant nodes
+        sorted_consts = sorted(const_values)
+        while sorted_consts:
+            largest = sorted_consts.pop()
+            for smaller in set(sorted_consts):
+                if smaller < largest:
+                    symbol_dict[(largest, smaller)] = ">"
+                    indegree_dict[smaller] += 1
+                    frequency_dict[(largest, smaller)] += 1
+                    graph_dict[largest].add(smaller)
+
+                    for adj in graph_dict[smaller]:
+                        if isinstance(adj, str):
+                            graph_dict[largest].discard(adj)
+
+        return graph_dict, symbol_dict, indegree_dict, frequency_dict
+
+    def _get_compare_operand_value(self, node: nodes.Compare, const_values: Optional[set[int]]=None):
+        value = None
+        if isinstance(node, nodes.Name):
+            value = node.name
+        elif isinstance(node, nodes.Const):
+            value = node.value
+            const_values.append(value)
+        # elif #Walrus
+        return value
+
+    def _handle_cycles(self, symbol_dict, cycles):
+        for cycle in cycles:
+            all_geq = all(symbol_dict[(cycle[i], cycle[i+1])] == ">=" for (i, _) in enumerate(cycle) if i < len(cycle) - 1)
+            all_geq = all_geq and symbol_dict[cycle[-1], cycle[0]] == ">="
+            if all_geq:
+                print("Pylint simplify")
+            else:
+                print("Pylint bad cycle")
+
 
     @staticmethod
     def _apply_boolean_simplification_rules(operator, values):
@@ -1358,7 +1402,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
     def visit_boolop(self, node: nodes.BoolOp) -> None:
         self._check_consider_merging_isinstance(node)
         self._check_consider_using_in(node)
-        self._check_chained_comparison(node)
+        self._check_comparisons(node)
         self._check_simplifiable_condition(node)
 
     @staticmethod
