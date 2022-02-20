@@ -278,10 +278,10 @@ def get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict):
         for i, item in enumerate(path):
             if True:
                 for val in path[:i]:
-                    # if isinstance(val, str) or isinstance(item, str):
                     # graph_dict[val].discard(item)
                     frequency_dict[(val, item)] = max(frequency_dict[(val, item)] - 1, 0)
         paths.append(path)
+        print(path)
 
     return paths
 
@@ -296,8 +296,8 @@ def get_path_longest(path, graph_dict, node, indegree_dict, indegree_zero, frequ
         next = get_longest_path_item(adj, symbols_in_longest_path, nodes_in_longest_path)
         # frequency_dict[(node, next)] -= 1
         get_path_longest(path, graph_dict, next, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
-    if indegree_dict[node] == 0 and len(adj) >= 2:
-        indegree_zero.add(node)
+        if indegree_dict[node] == 0 and (len(adj) >= 2 or frequency_dict[(node, next)] >= 2):
+            indegree_zero.add(node)
 
 def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict):
     for adj in graph_dict[node]:
@@ -378,6 +378,10 @@ def optimize_boolop(node: nodes.BoolOp):
                 frequency_dict[(largest, smaller)] += 1
                 graph_dict[largest].add(smaller)
 
+                for adj in graph_dict[smaller]:
+                    if isinstance(adj, str):
+                        graph_dict[largest].discard(adj)
+
     return graph_dict, symbol_dict, indegree_dict, frequency_dict
 
 def get_compare_operand_value(node: nodes.Compare, const_values: Optional[set[int]]=None):
@@ -434,6 +438,7 @@ if __name__ == "__main__":
     print(graph_dict)
     print(symbol_dict)
     print(indegree_dict)
+    print(frequency_dict)
     cycles = get_cycles(graph_dict)
     print("cycles", cycles)
 
