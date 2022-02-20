@@ -267,8 +267,8 @@ def get_path(path, graph_dict, node, indegree_dict, indegree_zero, frequency_dic
 def get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict):
     paths = []
     while indegree_zero:
-        symbols_in_longest_path = {key: 1 if isinstance(key, str) else 0 for key in graph_dict}
-        nodes_in_longest_path = {key: 1 for key in graph_dict}
+        symbols_in_longest_path = {}
+        nodes_in_longest_path = {}
         for root in indegree_zero:
             count_nodes(root, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict)
         path = []
@@ -278,7 +278,6 @@ def get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict):
         for i, item in enumerate(path):
             if True:
                 for val in path[:i]:
-                    # graph_dict[val].discard(item)
                     frequency_dict[(val, item)] = max(frequency_dict[(val, item)] - 1, 0)
         paths.append(path)
         print(path)
@@ -286,7 +285,7 @@ def get_paths_longest(graph_dict, indegree_dict, indegree_zero, frequency_dict):
     return paths
 
 def get_longest_path_item(items, symbols_in_longest_path, nodes_in_longest_path):
-    return sorted(items, key=lambda x: (symbols_in_longest_path[x], nodes_in_longest_path[x]))[0]
+    return sorted(items, reverse=True, key=lambda x: (symbols_in_longest_path[x], nodes_in_longest_path[x]))[0]
 
 def get_path_longest(path, graph_dict, node, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path):
     path.append(node)
@@ -296,18 +295,24 @@ def get_path_longest(path, graph_dict, node, indegree_dict, indegree_zero, frequ
         next = get_longest_path_item(adj, symbols_in_longest_path, nodes_in_longest_path)
         # frequency_dict[(node, next)] -= 1
         get_path_longest(path, graph_dict, next, indegree_dict, indegree_zero, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
-        if indegree_dict[node] == 0 and (len(adj) >= 2 or frequency_dict[(node, next)] >= 2):
+        if (len(adj) >= 2 or frequency_dict[(node, next)] >= 2):
             indegree_zero.add(node)
 
 def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict):
-    for adj in graph_dict[node]:
-        if frequency_dict[(node, adj)] == 0:
-            continue
-        if isinstance(node, str):
-            symbols_in_longest_path[adj] = max(symbols_in_longest_path[adj], symbols_in_longest_path[node] + 1)
-        nodes_in_longest_path[adj] = max(nodes_in_longest_path[adj], nodes_in_longest_path[node] + 1)
-        count_nodes(adj, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict)
-
+    if node in symbols_in_longest_path and node in nodes_in_longest_path:
+        return (symbols_in_longest_path[node], nodes_in_longest_path[node])
+    adj = [a for a in graph_dict[node] if frequency_dict[(node, a)] != 0]
+    cur_node_symbol_count = 1 if isinstance(node, str) else 0
+    if not adj:
+        max_symbols_path = cur_node_symbol_count
+        max_nodes_path = 1
+    else:
+        adj_maximums = [count_nodes(a, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict) for a in adj]
+        max_symbols_path = max(adj_maxes[0] for adj_maxes in adj_maximums) + cur_node_symbol_count
+        max_nodes_path = max(adj_maxes[1] for adj_maxes in adj_maximums) + 1
+    symbols_in_longest_path[node] = max_symbols_path
+    nodes_in_longest_path[node] = max_nodes_path
+    return (max_symbols_path, max_nodes_path)
 
 def strip_path(path):
     low = 0
@@ -431,7 +436,7 @@ if __name__ == "__main__":
     if a < b < c and a < c:
         pass
     """)
-    node = node1
+    node = node6
 
     print(node.test.as_string())
     graph_dict, symbol_dict, indegree_dict, frequency_dict = optimize_boolop(node.test)
