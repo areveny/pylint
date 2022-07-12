@@ -1,6 +1,8 @@
 # pylint: disable=missing-docstring, multiple-statements, useless-object-inheritance, import-outside-toplevel
-# pylint: disable=too-few-public-methods, no-init, no-self-use, bare-except, broad-except
+# pylint: disable=too-few-public-methods, bare-except, broad-except
 # pylint: disable=using-constant-test, import-error, global-variable-not-assigned, unnecessary-comprehension
+# pylint: disable=unnecessary-lambda-assignment
+
 from __future__ import print_function
 
 # pylint: disable=wrong-import-position
@@ -289,6 +291,12 @@ class DunderClass:
         # This name is not defined in the AST but it's present at runtime
         return __class__
 
+    # It is also present in inner methods
+    def method_two(self):
+        def inner_method():
+            return __class__
+
+        inner_method()
 
 def undefined_annotation(a:x): # [undefined-variable]
     if x == 2: # [used-before-assignment]

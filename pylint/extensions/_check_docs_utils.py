@@ -1,39 +1,21 @@
-# Copyright (c) 2016-2019, 2021 Ashley Whetter <ashley@awhetter.co.uk>
-# Copyright (c) 2016-2020 Claudiu Popa <pcmanticore@gmail.com>
-# Copyright (c) 2016 Yuri Bochkarev <baltazar.bz@gmail.com>
-# Copyright (c) 2016 Glenn Matthews <glenn@e-dad.net>
-# Copyright (c) 2016 Moises Lopez <moylop260@vauxoo.com>
-# Copyright (c) 2017, 2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2017 Mitar <mitar.github@tnode.com>
-# Copyright (c) 2018, 2020 Anthony Sottile <asottile@umich.edu>
-# Copyright (c) 2018 Jim Robertson <jrobertson98atx@gmail.com>
-# Copyright (c) 2018 ssolanki <sushobhitsolanki@gmail.com>
-# Copyright (c) 2018 Mitchell T.H. Young <mitchelly@gmail.com>
-# Copyright (c) 2018 Adrian Chirieac <chirieacam@gmail.com>
-# Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
-# Copyright (c) 2019 Danny Hermes <daniel.j.hermes@gmail.com>
-# Copyright (c) 2019 Zeb Nicholls <zebedee.nicholls@climate-energy-college.org>
-# Copyright (c) 2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-# Copyright (c) 2021 allanc65 <95424144+allanc65@users.noreply.github.com>
-# Copyright (c) 2021 Konstantina Saketou <56515303+ksaketou@users.noreply.github.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
-
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 """Utility methods for docstring checking."""
 
+from __future__ import annotations
+
 import re
-from typing import List, Set, Tuple
 
 import astroid
 from astroid import nodes
+from astroid.util import Uninferable
 
 from pylint.checkers import utils
 
 
-def space_indentation(s):
+def space_indentation(s: str) -> int:
     """The number of leading spaces in a string.
 
     :param str s: input string
@@ -44,7 +26,7 @@ def space_indentation(s):
     return len(s) - len(s.lstrip(" "))
 
 
-def get_setters_property_name(node):
+def get_setters_property_name(node: nodes.FunctionDef) -> str | None:
     """Get the name of the property that the given node is a setter for.
 
     :param node: The node to get the property name for.
@@ -65,7 +47,7 @@ def get_setters_property_name(node):
     return None
 
 
-def get_setters_property(node):
+def get_setters_property(node: nodes.FunctionDef) -> nodes.FunctionDef | None:
     """Get the property node for the given setter node.
 
     :param node: The node to get the property for.
@@ -80,7 +62,7 @@ def get_setters_property(node):
     property_name = get_setters_property_name(node)
     class_node = utils.node_frame_class(node)
     if property_name and class_node:
-        class_attrs = class_node.getattr(node.name)
+        class_attrs: list[nodes.FunctionDef] = class_node.getattr(node.name)
         for attr in class_attrs:
             if utils.decorated_with_property(attr):
                 property_ = attr
@@ -89,7 +71,7 @@ def get_setters_property(node):
     return property_
 
 
-def returns_something(return_node):
+def returns_something(return_node: nodes.Return) -> bool:
     """Check if a return node returns a value other than None.
 
     :param return_node: The return node to check.
@@ -107,7 +89,7 @@ def returns_something(return_node):
     return not (isinstance(returns, nodes.Const) and returns.value is None)
 
 
-def _get_raise_target(node):
+def _get_raise_target(node: nodes.NodeNG) -> nodes.NodeNG | Uninferable | None:
     if isinstance(node.exc, nodes.Call):
         func = node.exc.func
         if isinstance(func, (nodes.Name, nodes.Attribute)):
@@ -115,18 +97,17 @@ def _get_raise_target(node):
     return None
 
 
-def _split_multiple_exc_types(target: str) -> List[str]:
+def _split_multiple_exc_types(target: str) -> list[str]:
     delimiters = r"(\s*,(?:\s*or\s)?\s*|\s+or\s+)"
     return re.split(delimiters, target)
 
 
-def possible_exc_types(node: nodes.NodeNG) -> Set[nodes.ClassDef]:
+def possible_exc_types(node: nodes.NodeNG) -> set[nodes.ClassDef]:
     """Gets all the possible raised exception types for the given raise node.
 
     .. note::
 
         Caught exception types are ignored.
-
 
     :param node: The raise node to find exception types for.
 
@@ -155,6 +136,8 @@ def possible_exc_types(node: nodes.NodeNG) -> Set[nodes.ClassDef]:
             exceptions = [target]
         elif isinstance(target, nodes.FunctionDef):
             for ret in target.nodes_of_class(nodes.Return):
+                if ret.value is None:
+                    continue
                 if ret.frame(future=True) != target:
                     # return from inner function - ignore it
                     continue
@@ -176,7 +159,9 @@ def possible_exc_types(node: nodes.NodeNG) -> Set[nodes.ClassDef]:
         return set()
 
 
-def docstringify(docstring: str, default_type: str = "default") -> "Docstring":
+def docstringify(
+    docstring: nodes.Const | None, default_type: str = "default"
+) -> Docstring:
     best_match = (0, DOCSTRING_TYPES.get(default_type, Docstring)(docstring))
     for docstring_type in (
         SphinxDocstring,
@@ -207,10 +192,9 @@ class Docstring:
     """
 
     # These methods are designed to be overridden
-    # pylint: disable=no-self-use
-    def __init__(self, doc):
-        doc = doc or ""
-        self.doc = doc.expandtabs()
+    def __init__(self, doc: nodes.Const | None) -> None:
+        docstring: str = doc.value if doc else ""
+        self.doc = docstring.expandtabs()
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}:'''{self.doc}'''>"
@@ -219,34 +203,34 @@ class Docstring:
         """Returns the number of matching docstring sections."""
         return 0
 
-    def exceptions(self):
+    def exceptions(self) -> set[str]:
         return set()
 
-    def has_params(self):
+    def has_params(self) -> bool:
         return False
 
-    def has_returns(self):
+    def has_returns(self) -> bool:
         return False
 
-    def has_rtype(self):
+    def has_rtype(self) -> bool:
         return False
 
-    def has_property_returns(self):
+    def has_property_returns(self) -> bool:
         return False
 
-    def has_property_type(self):
+    def has_property_type(self) -> bool:
         return False
 
-    def has_yields(self):
+    def has_yields(self) -> bool:
         return False
 
-    def has_yields_type(self):
+    def has_yields_type(self) -> bool:
         return False
 
-    def match_param_docs(self):
+    def match_param_docs(self) -> tuple[set[str], set[str]]:
         return set(), set()
 
-    def params_documented_elsewhere(self):
+    def params_documented_elsewhere(self) -> bool:
         return self.re_for_parameters_see.search(self.doc) is not None
 
 
@@ -287,7 +271,7 @@ class SphinxDocstring(Docstring):
         \s+
         )?
 
-        ((\\\*{{1,2}}\w+)|(\w+))  # Parameter name with potential asterisks
+        ((\\\*{{0,2}}\w+)|(\w+))  # Parameter name with potential asterisks
         \s*                       # whitespace
         :                         # final colon
         """
@@ -341,8 +325,8 @@ class SphinxDocstring(Docstring):
             )
         )
 
-    def exceptions(self):
-        types = set()
+    def exceptions(self) -> set[str]:
+        types: set[str] = set()
 
         for match in re.finditer(self.re_raise_in_docstring, self.doc):
             raise_type = match.group(1)
@@ -350,25 +334,25 @@ class SphinxDocstring(Docstring):
 
         return types
 
-    def has_params(self):
+    def has_params(self) -> bool:
         if not self.doc:
             return False
 
         return self.re_param_in_docstring.search(self.doc) is not None
 
-    def has_returns(self):
+    def has_returns(self) -> bool:
         if not self.doc:
             return False
 
         return bool(self.re_returns_in_docstring.search(self.doc))
 
-    def has_rtype(self):
+    def has_rtype(self) -> bool:
         if not self.doc:
             return False
 
         return bool(self.re_rtype_in_docstring.search(self.doc))
 
-    def has_property_returns(self):
+    def has_property_returns(self) -> bool:
         if not self.doc:
             return False
 
@@ -376,13 +360,13 @@ class SphinxDocstring(Docstring):
         # so the first line must not be a known directive.
         return not self.doc.lstrip().startswith(":")
 
-    def has_property_type(self):
+    def has_property_type(self) -> bool:
         if not self.doc:
             return False
 
         return bool(self.re_property_type_in_docstring.search(self.doc))
 
-    def match_param_docs(self):
+    def match_param_docs(self) -> tuple[set[str], set[str]]:
         params_with_doc = set()
         params_with_type = set()
 
@@ -400,7 +384,9 @@ class SphinxDocstring(Docstring):
 
 
 class EpytextDocstring(SphinxDocstring):
-    """Epytext is similar to Sphinx. See the docs:
+    """Epytext is similar to Sphinx.
+
+    See the docs:
         http://epydoc.sourceforge.net/epytext.html
         http://epydoc.sourceforge.net/fields.html#fields
 
@@ -438,7 +424,7 @@ class EpytextDocstring(SphinxDocstring):
 
     re_returns_in_docstring = re.compile(r"@returns?:")
 
-    def has_property_returns(self):
+    def has_property_returns(self) -> bool:
         if not self.doc:
             return False
 
@@ -485,7 +471,7 @@ class GoogleDocstring(Docstring):
 
     re_param_line = re.compile(
         rf"""
-        \s*  (\*{{0,2}}\w+)             # identifier potentially with asterisks
+        \s*  ((?:\\?\*{{0,2}})?\w+)     # identifier potentially with asterisks
         \s*  ( [(]
             {re_multiple_type}
             (?:,\s+optional)?
@@ -548,13 +534,13 @@ class GoogleDocstring(Docstring):
             )
         )
 
-    def has_params(self):
+    def has_params(self) -> bool:
         if not self.doc:
             return False
 
         return self.re_param_section.search(self.doc) is not None
 
-    def has_returns(self):
+    def has_returns(self) -> bool:
         if not self.doc:
             return False
 
@@ -570,7 +556,7 @@ class GoogleDocstring(Docstring):
 
         return False
 
-    def has_rtype(self):
+    def has_rtype(self) -> bool:
         if not self.doc:
             return False
 
@@ -586,7 +572,7 @@ class GoogleDocstring(Docstring):
 
         return False
 
-    def has_property_returns(self):
+    def has_property_returns(self) -> bool:
         # The summary line is the return doc,
         # so the first line must not be a known directive.
         first_line = self._first_line()
@@ -597,13 +583,13 @@ class GoogleDocstring(Docstring):
             or self.re_yields_section.search(first_line)
         )
 
-    def has_property_type(self):
+    def has_property_type(self) -> bool:
         if not self.doc:
             return False
 
         return bool(self.re_property_returns_line.match(self._first_line()))
 
-    def has_yields(self):
+    def has_yields(self) -> bool:
         if not self.doc:
             return False
 
@@ -619,7 +605,7 @@ class GoogleDocstring(Docstring):
 
         return False
 
-    def has_yields_type(self):
+    def has_yields_type(self) -> bool:
         if not self.doc:
             return False
 
@@ -635,8 +621,8 @@ class GoogleDocstring(Docstring):
 
         return False
 
-    def exceptions(self):
-        types = set()
+    def exceptions(self) -> set[str]:
+        types: set[str] = set()
 
         entries = self._parse_section(self.re_raise_section)
         for entry in entries:
@@ -651,9 +637,9 @@ class GoogleDocstring(Docstring):
 
         return types
 
-    def match_param_docs(self):
-        params_with_doc = set()
-        params_with_type = set()
+    def match_param_docs(self) -> tuple[set[str], set[str]]:
+        params_with_doc: set[str] = set()
+        params_with_type: set[str] = set()
 
         entries = self._parse_section(self.re_param_section)
         entries.extend(self._parse_section(self.re_keyword_param_section))
@@ -663,6 +649,9 @@ class GoogleDocstring(Docstring):
                 continue
 
             param_name = match.group(1)
+            # Remove escape characters necessary for asterisks
+            param_name = param_name.replace("\\", "")
+
             param_type = match.group(2)
             param_desc = match.group(3)
 
@@ -674,28 +663,28 @@ class GoogleDocstring(Docstring):
 
         return params_with_doc, params_with_type
 
-    def _first_line(self):
+    def _first_line(self) -> str:
         return self.doc.lstrip().split("\n", 1)[0]
 
     @staticmethod
-    def min_section_indent(section_match):
+    def min_section_indent(section_match: re.Match[str]) -> int:
         return len(section_match.group(1)) + 1
 
     @staticmethod
-    def _is_section_header(_):
+    def _is_section_header(_: str) -> bool:
         # Google parsing does not need to detect section headers,
         # because it works off of indentation level only
         return False
 
-    def _parse_section(self, section_re):
+    def _parse_section(self, section_re: re.Pattern[str]) -> list[str]:
         section_match = section_re.search(self.doc)
         if section_match is None:
             return []
 
         min_indentation = self.min_section_indent(section_match)
 
-        entries = []
-        entry = []
+        entries: list[str] = []
+        entry: list[str] = []
         is_first = True
         for line in section_match.group(2).splitlines():
             if not line.strip():
@@ -739,11 +728,22 @@ class NumpyDocstring(GoogleDocstring):
         re.X | re.S | re.M,
     )
 
+    re_default_value = r"""((['"]\w+\s*['"])|(True)|(False)|(None))"""
+
     re_param_line = re.compile(
         rf"""
-        \s*  (\*{{0,2}}\w+)(\s?(:|\n))                                      # identifier with potential asterisks
-        \s*  (?:({GoogleDocstring.re_multiple_type})(?:,\s+optional)?\n)?   # optional type declaration
-        \s* (.*)                                                            # optional description
+        \s*  (\*{{0,2}}\w+)(\s?(:|\n))              # identifier with potential asterisks
+        \s*
+        (
+         (
+          ({GoogleDocstring.re_multiple_type})      # default type declaration
+          (,\s+optional)?                           # optional 'optional' indication
+         )?
+         (
+          {{({re_default_value},?\s*)+}}            # set of default values
+         )?
+        \n)?
+        \s* (.*)                                    # optional description
     """,
         re.X | re.S,
     )
@@ -781,7 +781,7 @@ class NumpyDocstring(GoogleDocstring):
 
     supports_yields = True
 
-    def match_param_docs(self) -> Tuple[Set[str], Set[str]]:
+    def match_param_docs(self) -> tuple[set[str], set[str]]:
         """Matches parameter documentation section to parameter documentation rules."""
         params_with_doc = set()
         params_with_type = set()
@@ -813,11 +813,11 @@ class NumpyDocstring(GoogleDocstring):
         return params_with_doc, params_with_type
 
     @staticmethod
-    def min_section_indent(section_match):
+    def min_section_indent(section_match: re.Match[str]) -> int:
         return len(section_match.group(1))
 
     @staticmethod
-    def _is_section_header(line):
+    def _is_section_header(line: str) -> bool:
         return bool(re.match(r"\s*-+$", line))
 
 

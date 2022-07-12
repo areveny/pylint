@@ -1,4 +1,16 @@
-#
+# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+# For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
+
+from __future__ import annotations
+
+import os
+import sys
+from datetime import datetime
+
+from pylint import __version__
+from pylint.__pkginfo__ import numversion
+
 # Pylint documentation build configuration file, created by
 # sphinx-quickstart on Thu Apr  4 20:31:25 2013.
 #
@@ -10,20 +22,10 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import os
-import sys
-from datetime import datetime
-
-# The version info for the project you're documenting, acts as replacement for
-# |version| and |release|, also used in various other places throughout the
-# built documents.
-#
-# The short X.Y version.
-from pylint import __version__
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
+# documentation root, use 'os.path.abspath' to make it absolute, like shown here.
 sys.path.append(os.path.abspath("exts"))
 
 # -- General configuration -----------------------------------------------------
@@ -37,9 +39,60 @@ extensions = [
     "pylint_features",
     "pylint_extensions",
     "pylint_messages",
+    "pylint_options",
     "sphinx.ext.autosectionlabel",
     "sphinx.ext.intersphinx",
+    "sphinx_reredirects",
+    "myst_parser",
 ]
+
+
+# Single file redirects are handled in this file and can be done by a pylint
+# contributor. We use the following extension:
+# https://documatt.gitlab.io/sphinx-reredirects/usage.html
+# Directory redirects are handled in ReadTheDoc admin interface and can only be done
+# by pylint maintainers at the following URL:
+# https://readthedocs.org/dashboard/pylint/redirects/
+redirects: dict[str, str] = {
+    # "<source>": "<target>"
+    "additional_commands/index": "../index.html",
+    "development_guide/index": "api/index.html",
+    "development_guide/contribute": "../development_guide/contributor_guide/index.html",
+    "development_guide/contributor_guide": "contributor_guide/index.html",
+    "development_guide/profiling": "../development_guide/contributor_guide/profiling.html",
+    "development_guide/tests/index": "../contributor_guide/tests/index.html",
+    "development_guide/tests/install": "../contributor_guide/tests/install.html",
+    "development_guide/tests/launching_test": "../contributor_guide/tests/launching_test.html",
+    # There was a typo in the original file, don't fix.
+    "development_guide/tests/writting_test": "../contributor_guide/tests/writing_test.html",
+    "development/testing": "tests/index.html",
+    "how_tos/custom_checkers": "../development_guide/how_tos/custom_checkers.html",
+    "how_tos/index": "../development_guide/how_tos/index.html",
+    "how_tos/plugins": "../development_guide/how_tos/plugins.html",
+    "how_tos/transform_plugins": "../development_guide/how_tos/transform_plugins.html",
+    "intro": "index.html",
+    "messages/messages_introduction": "../user_guide/messages/index.html",
+    "messages/messages_list": "../user_guide/messages/messages_overview.html",
+    "support": "contact.html",
+    "technical_reference/c_extensions": "../user_guide/messages/error/no-member.html",
+    "technical_reference/extensions": "../user_guide/checkers/extensions.html",
+    "technical_reference/checkers": "../development_guide/technical_reference/checkers.html",
+    "technical_reference/features": "../user_guide/checkers/features.html",
+    "technical_reference/index": "../development_guide/technical_reference/index.html",
+    "technical_reference/startup": "../development_guide/technical_reference/startup.html",
+    "user_guide/configuration/naming-styles": "../user_guide/messages/convention/invalid-name.html",
+    "user_guide/ide_integration/flymake-emacs": "../installation/ide_integration/flymake-emacs.html",
+    "user_guide/ide_integration/ide-integration": "../installation/ide_integration/index.html",
+    "user_guide/ide-integration": "installation.html",
+    "user_guide/ide_integration/textmate": "../installation/ide_integration/textmate.html",
+    "user_guide/index": "installation/index.html",
+    "user_guide/message-control": "messages/message_control.html",
+    "user_guide/options": "configuration/all-options.html",
+    "user_guide/output": "usage/output.html",
+    "user_guide/pre-commit-integration": "installation/pre-commit-integration.html",
+    "user_guide/run": "usage/run.html",
+}
+
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -56,8 +109,13 @@ master_doc = "index"
 # General information about the project.
 project = "Pylint"
 current_year = datetime.utcnow().year
-copyright = f"2003-{current_year}, Logilab, PyCQA and contributors"
+copyright = f"2003-{current_year}, Logilab, PyCQA and contributors"  # pylint: disable=redefined-builtin
 
+# The version info for the project you're documenting, acts as replacement for
+# |version| and |release|, also used in various other places throughout the
+# built documents.
+# The short X.Y version.
+version = f"{numversion[0]}.{numversion[1]}"
 # The full version, including alpha/beta/rc tags.
 release = __version__
 
@@ -73,7 +131,7 @@ release = __version__
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ["_build"]
+exclude_patterns = ["_build", "data/**"]
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 # default_role = None
@@ -100,17 +158,13 @@ pygments_style = "sphinx"
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = "python_docs_theme"
+html_theme = "furo"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-html_theme_options = {
-    "collapsiblesidebar": True,
-    "issues_url": "https://github.com/pycqa/pylint/issues/new",
-    "root_name": "PyCQA",
-    "root_url": "https://meta.pycqa.org/en/latest/",
-}
+# Currently we use the default Furo configuration
+# html_theme_options = {}
 
 # Add any paths that contain custom themes here, relative to this directory.
 # html_theme_path = []
@@ -143,9 +197,8 @@ html_last_updated_fmt = "%b %d, %Y"
 smartquotes = False
 
 # Custom sidebar templates, maps document names to template names.
-html_sidebars = {
-    "**": ["localtoc.html", "globaltoc.html", "relations.html", "sourcelink.html"]
-}
+# Currently we use the default Furo Sidebar
+# html_sidebars = {}
 
 # Additional templates that should be rendered to pages, maps page names to
 # template names.
@@ -233,11 +286,14 @@ man_pages = [
     ("index", "pylint", "Pylint Documentation", ["Logilab, PyCQA and contributors"], 1)
 ]
 
+# pylint: disable-next=consider-using-namedtuple-or-dataclass
 intersphinx_mapping = {
-    "astroid": ("https://astroid.readthedocs.io/en/latest/", None),
+    "astroid": ("https://pylint.pycqa.org/projects/astroid/en/latest/", None),
     "python": ("https://docs.python.org/3", None),
 }
 
 # Prevent label issues due to colliding section names
 # through including multiple documents
 autosectionlabel_prefix_document = True
+
+linkcheck_ignore = ["https://github.com/PyCQA/pylint/blob/main/pylint/extensions/.*"]

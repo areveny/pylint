@@ -1,22 +1,32 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
+
+from __future__ import annotations
 
 import collections
 import copy
 import itertools
+import sys
 import tokenize
+from collections.abc import Iterator
 from functools import reduce
-from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple, Union
+from typing import NamedTuple
 
 import astroid
 from astroid import nodes
 from astroid.util import Uninferable
 
-from pylint import checkers, interfaces
-from pylint import utils as lint_utils
+from pylint import checkers
 from pylint.checkers import utils
 from pylint.checkers.utils import node_frame_class
 from pylint.graph import get_cycles, get_paths
+from pylint.interfaces import HIGH
+
+if sys.version_info >= (3, 8):
+    from functools import cached_property
+else:
+    from astroid.decorators import cachedproperty as cached_property
 
 KNOWN_INFINITE_ITERATORS = {"itertools.count"}
 BUILTIN_EXIT_FUNCS = frozenset(("quit", "exit"))
@@ -54,7 +64,7 @@ def _if_statement_is_always_returning(if_node, returning_node_class) -> bool:
     return any(isinstance(node, returning_node_class) for node in if_node.body)
 
 
-def _is_trailing_comma(tokens: List[tokenize.TokenInfo], index: int) -> bool:
+def _is_trailing_comma(tokens: list[tokenize.TokenInfo], index: int) -> bool:
     """Check if the given token is a trailing comma.
 
     :param tokens: Sequence of modules tokens
@@ -119,8 +129,8 @@ def _is_a_return_statement(node: nodes.Call) -> bool:
 
 
 def _is_part_of_with_items(node: nodes.Call) -> bool:
-    """Checks if one of the node's parents is a ``nodes.With`` node and that the node itself is located
-    somewhere under its ``items``.
+    """Checks if one of the node's parents is a ``nodes.With`` node and that the node
+    itself is located somewhere under its ``items``.
     """
     frame = node.frame(future=True)
     current = node
@@ -134,8 +144,8 @@ def _is_part_of_with_items(node: nodes.Call) -> bool:
 
 
 def _will_be_released_automatically(node: nodes.Call) -> bool:
-    """Checks if a call that could be used in a ``with`` statement is used in an alternative
-    construct which would ensure that its __exit__ method is called.
+    """Checks if a call that could be used in a ``with`` statement is used in an
+    alternative construct which would ensure that its __exit__ method is called.
     """
     callables_taking_care_of_exit = frozenset(
         (
@@ -151,20 +161,39 @@ def _will_be_released_automatically(node: nodes.Call) -> bool:
     return func.qname() in callables_taking_care_of_exit
 
 
+def _is_part_of_assignment_target(node: nodes.NodeNG) -> bool:
+    """Check whether use of a variable is happening as part of the left-hand
+    side of an assignment.
+
+    This requires recursive checking, because destructuring assignment can have
+    arbitrarily nested tuples and lists to unpack.
+    """
+    if isinstance(node.parent, nodes.Assign):
+        return node in node.parent.targets
+
+    if isinstance(node.parent, nodes.AugAssign):
+        return node == node.parent.target
+
+    if isinstance(node.parent, (nodes.Tuple, nodes.List)):
+        return _is_part_of_assignment_target(node.parent)
+
+    return False
+
+
 class ConsiderUsingWithStack(NamedTuple):
     """Stack for objects that may potentially trigger a R1732 message
     if they are not used in a ``with`` block later on.
     """
 
-    module_scope: Dict[str, nodes.NodeNG] = {}
-    class_scope: Dict[str, nodes.NodeNG] = {}
-    function_scope: Dict[str, nodes.NodeNG] = {}
+    module_scope: dict[str, nodes.NodeNG] = {}
+    class_scope: dict[str, nodes.NodeNG] = {}
+    function_scope: dict[str, nodes.NodeNG] = {}
 
-    def __iter__(self) -> Iterator[Dict[str, nodes.NodeNG]]:
+    def __iter__(self) -> Iterator[dict[str, nodes.NodeNG]]:
         yield from (self.function_scope, self.class_scope, self.module_scope)
 
     def get_stack_for_frame(
-        self, frame: Union[nodes.FunctionDef, nodes.ClassDef, nodes.Module]
+        self, frame: nodes.FunctionDef | nodes.ClassDef | nodes.Module
     ):
         """Get the stack corresponding to the scope of the given frame."""
         if isinstance(frame, nodes.FunctionDef):
@@ -186,8 +215,6 @@ class RefactoringChecker(checkers.BaseTokenChecker):
     in order to create knowledge about whether an "else if" node
     is a true "else if" node, or an "elif" node.
     """
-
-    __implements__ = (interfaces.ITokenChecker, interfaces.IAstroidChecker)
 
     name = "refactoring"
 
@@ -295,11 +322,12 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "and increases readability compared to for-loop iteration.",
         ),
         "R1714": (
-            'Consider merging these comparisons with "in" to %r',
+            "Consider merging these comparisons with 'in' by using '%s %sin (%s)'."
+            " Use a set instead if elements are hashable.",
             "consider-using-in",
-            "To check if a variable is equal to one of many values,"
-            'combine the values into a tuple and check if the variable is contained "in" it '
-            "instead of checking for equality against each of the values."
+            "To check if a variable is equal to one of many values, "
+            'combine the values into a set or tuple and check if the variable is contained "in" it '
+            "instead of checking for equality against each of the values. "
             "This is faster and less verbose.",
         ),
         "R1715": (
@@ -313,7 +341,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         "R1716": (
             "Simplify chained comparison between the operands",
             "chained-comparison",
-            "This message is emitted when pylint encounters boolean operation like"
+            "This message is emitted when pylint encounters boolean operation like "
             '"a < b and b < c", suggesting instead to refactor it to "a < b < c"',
         ),
         "R1717": (
@@ -322,7 +350,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "Emitted when we detect the creation of a dictionary "
             "using the dict() callable and a transient list. "
             "Although there is nothing syntactically wrong with this code, "
-            "it is hard to read and can be simplified to a dict comprehension."
+            "it is hard to read and can be simplified to a dict comprehension. "
             "Also it is faster since you don't need to create another "
             "transient list",
         ),
@@ -330,14 +358,15 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "Consider using a set comprehension",
             "consider-using-set-comprehension",
             "Although there is nothing syntactically wrong with this code, "
-            "it is hard to read and can be simplified to a set comprehension."
+            "it is hard to read and can be simplified to a set comprehension. "
             "Also it is faster since you don't need to create another "
             "transient list",
         ),
         "R1719": (
             "The if expression can be replaced with %s",
             "simplifiable-if-expression",
-            "Used when an if expression can be replaced with 'bool(test)'.",
+            "Used when an if expression can be replaced with 'bool(test)' "
+            "or simply 'test' if the boolean cast is implicit.",
         ),
         "R1720": (
             'Unnecessary "%s" after "raise", %s',
@@ -393,7 +422,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         "R1729": (
             "Use a generator instead '%s(%s)'",
             "use-a-generator",
-            "Comprehension inside of 'any' or 'all' is unnecessary. "
+            "Comprehension inside of 'any', 'all', 'max', 'min' or 'sum' is unnecessary. "
             "A generator would be sufficient and faster.",
         ),
         "R1730": (
@@ -431,6 +460,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "Emitted when using dict() to create an empty dictionary instead of the literal {}. "
             "The literal is faster as it avoids an additional function call.",
         ),
+        "R1736": (
+            "Unnecessary list index lookup, use '%s' instead",
+            "unnecessary-list-index-lookup",
+            "Emitted when iterating over an enumeration and accessing the "
+            "value by index lookup. "
+            "The value can be accessed directly instead.",
+        ),
     }
     options = (
         (
@@ -447,6 +483,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             {
                 "default": ("sys.exit", "argparse.parse_error"),
                 "type": "csv",
+                "metavar": "<members names>",
                 "help": "Complete name of functions that never returns. When checking "
                 "for inconsistent-return-statements if a never returning function is "
                 "called then it will be considered as an explicit return statement "
@@ -455,9 +492,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         ),
     )
 
-    priority = 0
-
-    def __init__(self, linter=None):
+    def __init__(self, linter):
         super().__init__(linter)
         self._return_nodes = {}
         self._consider_using_with_stack = ConsiderUsingWithStack()
@@ -474,11 +509,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def open(self):
         # do this in open since config not fully initialized in __init__
-        self._never_returning_functions = set(self.config.never_returning_functions)
+        self._never_returning_functions = set(
+            self.linter.config.never_returning_functions
+        )
 
-    @astroid.decorators.cachedproperty
+    @cached_property
     def _dummy_rgx(self):
-        return lint_utils.get_global_option(self, "dummy-variables-rgx", default=None)
+        return self.linter.config.dummy_variables_rgx
 
     @staticmethod
     def _is_bool_const(node):
@@ -573,23 +610,23 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         self.add_message("simplifiable-if-statement", node=node, args=(reduced_to,))
 
-    def process_tokens(self, tokens):
+    def process_tokens(self, tokens: list[tokenize.TokenInfo]) -> None:
         # Process tokens and look for 'if' or 'elif'
         for index, token in enumerate(tokens):
             token_string = token[1]
             if token_string == "elif":
                 # AST exists by the time process_tokens is called, so
-                # it's safe to assume tokens[index+1]
-                # exists. tokens[index+1][2] is the elif's position as
+                # it's safe to assume tokens[index+1] exists.
+                # tokens[index+1][2] is the elif's position as
                 # reported by CPython and PyPy,
-                # tokens[index][2] is the actual position and also is
+                # token[2] is the actual position and also is
                 # reported by IronPython.
-                self._elifs.extend([tokens[index][2], tokens[index + 1][2]])
+                self._elifs.extend([token[2], tokens[index + 1][2]])
             elif _is_trailing_comma(tokens, index):
                 if self.linter.is_message_enabled("trailing-comma-tuple"):
                     self.add_message("trailing-comma-tuple", line=token.start[0])
 
-    @utils.check_messages("consider-using-with")
+    @utils.only_required_for_messages("consider-using-with")
     def leave_module(self, _: nodes.Module) -> None:
         # check for context managers that have been created but not used
         self._emit_consider_using_with_if_needed(
@@ -597,7 +634,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         )
         self._init()
 
-    @utils.check_messages("too-many-nested-blocks")
+    @utils.only_required_for_messages("too-many-nested-blocks")
     def visit_tryexcept(self, node: nodes.TryExcept) -> None:
         self._check_nested_blocks(node)
 
@@ -625,24 +662,28 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                     args=(name_node.name,),
                 )
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "redefined-argument-from-local",
         "too-many-nested-blocks",
         "unnecessary-dict-index-lookup",
+        "unnecessary-list-index-lookup",
     )
     def visit_for(self, node: nodes.For) -> None:
         self._check_nested_blocks(node)
         self._check_unnecessary_dict_index_lookup(node)
+        self._check_unnecessary_list_index_lookup(node)
 
         for name in node.target.nodes_of_class(nodes.AssignName):
             self._check_redefined_argument_from_local(name)
 
-    @utils.check_messages("redefined-argument-from-local")
+    @utils.only_required_for_messages("redefined-argument-from-local")
     def visit_excepthandler(self, node: nodes.ExceptHandler) -> None:
         if node.name and isinstance(node.name, nodes.AssignName):
             self._check_redefined_argument_from_local(node.name)
 
-    @utils.check_messages("redefined-argument-from-local")
+    @utils.only_required_for_messages(
+        "redefined-argument-from-local", "consider-using-with"
+    )
     def visit_with(self, node: nodes.With) -> None:
         for var, names in node.items:
             if isinstance(var, nodes.Name):
@@ -749,7 +790,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         ):
             self.add_message("consider-using-get", node=node)
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "too-many-nested-blocks",
         "simplifiable-if-statement",
         "no-else-return",
@@ -757,6 +798,8 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         "no-else-break",
         "no-else-continue",
         "consider-using-get",
+        "consider-using-min-builtin",
+        "consider-using-max-builtin",
     )
     def visit_if(self, node: nodes.If) -> None:
         self._check_simplifiable_if(node)
@@ -847,7 +890,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 "consider-using-min-builtin", node=node, args=(reduced_to,)
             )
 
-    @utils.check_messages("simplifiable-if-expression")
+    @utils.only_required_for_messages("simplifiable-if-expression")
     def visit_ifexp(self, node: nodes.IfExp) -> None:
         self._check_simplifiable_ifexp(node)
 
@@ -876,7 +919,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         self.add_message("simplifiable-if-expression", node=node, args=(reduced_to,))
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "too-many-nested-blocks",
         "inconsistent-return-statements",
         "useless-return",
@@ -898,7 +941,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         )
         self._consider_using_with_stack.function_scope.clear()
 
-    @utils.check_messages("consider-using-with")
+    @utils.only_required_for_messages("consider-using-with")
     def leave_classdef(self, _: nodes.ClassDef) -> None:
         # check for context managers that have been created but not used
         self._emit_consider_using_with_if_needed(
@@ -906,7 +949,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         )
         self._consider_using_with_stack.class_scope.clear()
 
-    @utils.check_messages("stop-iteration-return")
+    @utils.only_required_for_messages("stop-iteration-return")
     def visit_raise(self, node: nodes.Raise) -> None:
         self._check_stop_iteration_inside_generator(node)
 
@@ -966,9 +1009,12 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 self.add_message(message_name, node=node)
 
     def _check_consider_using_generator(self, node):
-        # 'any' and 'all' definitely should use generator, while 'list' and 'tuple' need to be considered first
+        # 'any', 'all', definitely should use generator, while 'list', 'tuple',
+        # 'sum', 'max', and 'min' need to be considered first
         # See https://github.com/PyCQA/pylint/pull/3309#discussion_r576683109
-        checked_call = ["any", "all", "list", "tuple"]
+        # https://github.com/PyCQA/pylint/pull/6595#issuecomment-1125704244
+        # and https://peps.python.org/pep-0289/
+        checked_call = ["any", "all", "sum", "max", "min", "list", "tuple"]
         if (
             isinstance(node, nodes.Call)
             and node.func
@@ -994,7 +1040,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                         args=(call_name, inside_comp),
                     )
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "stop-iteration-return",
         "consider-using-dict-comprehension",
         "consider-using-set-comprehension",
@@ -1004,6 +1050,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         "consider-using-with",
         "use-list-literal",
         "use-dict-literal",
+        "use-a-generator",
     )
     def visit_call(self, node: nodes.Call) -> None:
         self._check_raising_stopiteration_in_generator_next_call(node)
@@ -1111,14 +1158,14 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             self._emit_nested_blocks_message_if_needed(nested_blocks)
 
     def _emit_nested_blocks_message_if_needed(self, nested_blocks):
-        if len(nested_blocks) > self.config.max_nested_blocks:
+        if len(nested_blocks) > self.linter.config.max_nested_blocks:
             self.add_message(
                 "too-many-nested-blocks",
                 node=nested_blocks[0],
-                args=(len(nested_blocks), self.config.max_nested_blocks),
+                args=(len(nested_blocks), self.linter.config.max_nested_blocks),
             )
 
-    def _emit_consider_using_with_if_needed(self, stack: Dict[str, nodes.NodeNG]):
+    def _emit_consider_using_with_if_needed(self, stack: dict[str, nodes.NodeNG]):
         for node in stack.values():
             self.add_message("consider-using-with", node=node)
 
@@ -1213,13 +1260,16 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         # Gather information for the suggestion
         common_variable = sorted(list(common_variables))[0]
-        comprehension = "in" if node.op == "or" else "not in"
         values = list(collections.OrderedDict.fromkeys(values))
         values.remove(common_variable)
         values_string = ", ".join(values) if len(values) != 1 else values[0] + ","
-        suggestion = f"{common_variable} {comprehension} ({values_string})"
-
-        self.add_message("consider-using-in", node=node, args=(suggestion,))
+        maybe_not = "" if node.op == "or" else "not "
+        self.add_message(
+            "consider-using-in",
+            node=node,
+            args=(common_variable, maybe_not, values_string),
+            confidence=HIGH,
+        )
 
     def _check_comparisons(self, node: nodes.BoolOp):
         graph_dict, symbol_dict, indegree_dict, frequency_dict = self._get_graph_from_comparison_nodes(node)
@@ -1314,10 +1364,9 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             else:
                 print("Pylint bad cycle")
 
-
     @staticmethod
     def _apply_boolean_simplification_rules(operator, values):
-        """Removes irrelevant values or returns shortcircuiting values.
+        """Removes irrelevant values or returns short-circuiting values.
 
         This function applies the following two rules:
         1) an OR expression with True in it will always be true, and the
@@ -1367,7 +1416,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
     def _check_simplifiable_condition(self, node):
         """Check if a boolean condition can be simplified.
 
-        Variables will not be simplified, even in the value can be inferred,
+        Variables will not be simplified, even if the value can be inferred,
         and expressions like '3 + 4' will remain expanded.
         """
         if not utils.is_test_condition(node):
@@ -1392,7 +1441,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 args=(node.as_string(), simplified_expr.as_string()),
             )
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "consider-merging-isinstance",
         "consider-using-in",
         "chained-comparison",
@@ -1429,7 +1478,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             message = "consider-swap-variables"
             self.add_message(message, node=node)
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "simplify-boolean-expression",
         "consider-using-ternary",
         "consider-swap-variables",
@@ -1439,12 +1488,12 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         self._append_context_managers_to_stack(node)
         self.visit_return(node)  # remaining checks are identical as for return nodes
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "simplify-boolean-expression",
         "consider-using-ternary",
         "consider-swap-variables",
     )
-    def visit_return(self, node: nodes.Return) -> None:
+    def visit_return(self, node: nodes.Return | nodes.Assign) -> None:
         self._check_swap_variables(node)
         if self._is_and_or_ternary(node.value):
             cond, truth_value, false_value = self._and_or_ternary_arguments(node.value)
@@ -1558,6 +1607,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def _check_consider_using_join(self, aug_assign):
         """We start with the augmented assignment and work our way upwards.
+
         Names of variables for nodes if match successful:
         result = ''  # assign
         for number in ['1', '2', '3']  # for_loop
@@ -1588,14 +1638,19 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         if is_concat_loop:
             self.add_message("consider-using-join", node=aug_assign)
 
-    @utils.check_messages("consider-using-join")
+    @utils.only_required_for_messages("consider-using-join")
     def visit_augassign(self, node: nodes.AugAssign) -> None:
         self._check_consider_using_join(node)
 
-    @utils.check_messages("unnecessary-comprehension", "unnecessary-dict-index-lookup")
+    @utils.only_required_for_messages(
+        "unnecessary-comprehension",
+        "unnecessary-dict-index-lookup",
+        "unnecessary-list-index-lookup",
+    )
     def visit_comprehension(self, node: nodes.Comprehension) -> None:
         self._check_unnecessary_comprehension(node)
         self._check_unnecessary_dict_index_lookup(node)
+        self._check_unnecessary_list_index_lookup(node)
 
     def _check_unnecessary_comprehension(self, node: nodes.Comprehension) -> None:
         if (
@@ -1643,7 +1698,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         else:
             return
         if expr_list == target_list and expr_list:
-            args: Optional[Tuple[str]] = None
+            args: tuple[str] | None = None
             inferred = utils.safe_infer(node.iter)
             if isinstance(node.parent, nodes.DictComp) and isinstance(
                 inferred, astroid.objects.DictItems
@@ -1715,7 +1770,6 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         Args:
             node (nodes.FunctionDef): the function holding the return statements.
-
         """
         # explicit return statements are those with a not None value
         explicit_returns = [
@@ -1800,7 +1854,6 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         Returns:
             bool: True if the node ends with an explicit statement, False otherwise.
-
         """
         # Recursion base case
         if isinstance(node, nodes.Return):
@@ -1851,7 +1904,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         return False
 
     def _is_function_def_never_returning(self, node: nodes.FunctionDef) -> bool:
-        """Return True if the function never returns. False otherwise.
+        """Return True if the function never returns, False otherwise.
 
         Args:
             node (nodes.FunctionDef): function definition node to be analyzed.
@@ -1873,7 +1926,9 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def _check_return_at_the_end(self, node):
         """Check for presence of a *single* return statement at the end of a
-        function. "return" or "return None" are useless because None is the
+        function.
+
+        "return" or "return None" are useless because None is the
         default return type if they are missing.
 
         NOTE: produces a message only if there is a single return statement
@@ -1896,7 +1951,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 self.add_message("useless-return", node=node)
 
     def _check_unnecessary_dict_index_lookup(
-        self, node: Union[nodes.For, nodes.Comprehension]
+        self, node: nodes.For | nodes.Comprehension
     ) -> None:
         """Add message when accessing dict values by index lookup."""
         # Verify that we have an .items() call and
@@ -1913,14 +1968,30 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 return
             iterating_object_name = node.iter.func.expr.as_string()
 
+            # Store potential violations. These will only be reported if we don't
+            # discover any writes to the collection during the loop.
+            messages = []
+
             # Verify that the body of the for loop uses a subscript
             # with the object that was iterated. This uses some heuristics
             # in order to make sure that the same object is used in the
             # for body.
 
             children = (
-                node.body if isinstance(node, nodes.For) else node.parent.get_children()
+                node.body
+                if isinstance(node, nodes.For)
+                else list(node.parent.get_children())
             )
+
+            # Check if there are any for / while loops within the loop in question;
+            # If so, we will be more conservative about reporting errors as we
+            # can't yet do proper control flow analysis to be sure when
+            # reassignment will affect us
+            nested_loops = itertools.chain.from_iterable(
+                child.nodes_of_class((nodes.For, nodes.While)) for child in children
+            )
+            has_nested_loops = next(nested_loops, None) is not None
+
             for child in children:
                 for subscript in child.nodes_of_class(nodes.Subscript):
                     if not isinstance(subscript.value, (nodes.Name, nodes.Attribute)):
@@ -1928,15 +1999,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
                     value = subscript.slice
 
-                    if isinstance(node, nodes.For) and (
-                        isinstance(subscript.parent, nodes.Assign)
-                        and subscript in subscript.parent.targets
-                        or isinstance(subscript.parent, nodes.AugAssign)
-                        and subscript == subscript.parent.target
+                    if isinstance(node, nodes.For) and _is_part_of_assignment_target(
+                        subscript
                     ):
                         # Ignore this subscript if it is the target of an assignment
                         # Early termination; after reassignment dict index lookup will be necessary
                         return
+
                     if isinstance(subscript.parent, nodes.Delete):
                         # Ignore this subscript if it's used with the delete keyword
                         return
@@ -1962,16 +2031,25 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                             # defined and compare that to the for loop's line number
                             continue
 
-                        self.add_message(
-                            "unnecessary-dict-index-lookup",
-                            node=subscript,
-                            args=(node.target.elts[1].as_string()),
-                        )
+                        if has_nested_loops:
+                            messages.append(
+                                {
+                                    "node": subscript,
+                                    "variable": node.target.elts[1].as_string(),
+                                }
+                            )
+                        else:
+                            self.add_message(
+                                "unnecessary-dict-index-lookup",
+                                node=subscript,
+                                args=(node.target.elts[1].as_string(),),
+                            )
 
                     # Case where .items is assigned to single var (i.e., for item in d.items())
                     elif isinstance(value, nodes.Subscript):
                         if (
                             not isinstance(node.target, nodes.AssignName)
+                            or not isinstance(value.value, nodes.Name)
                             or node.target.name != value.value.name
                             or iterating_object_name != subscript.value.as_string()
                         ):
@@ -1992,8 +2070,130 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                         inferred = utils.safe_infer(value.slice)
                         if not isinstance(inferred, nodes.Const) or inferred.value != 0:
                             continue
+
+                        if has_nested_loops:
+                            messages.append(
+                                {
+                                    "node": subscript,
+                                    "variable": "1".join(
+                                        value.as_string().rsplit("0", maxsplit=1)
+                                    ),
+                                }
+                            )
+                        else:
+                            self.add_message(
+                                "unnecessary-dict-index-lookup",
+                                node=subscript,
+                                args=(
+                                    "1".join(value.as_string().rsplit("0", maxsplit=1)),
+                                ),
+                            )
+
+            for message in messages:
+                self.add_message(
+                    "unnecessary-dict-index-lookup",
+                    node=message["node"],
+                    args=(message["variable"],),
+                )
+
+    def _check_unnecessary_list_index_lookup(
+        self, node: nodes.For | nodes.Comprehension
+    ) -> None:
+        if (
+            not isinstance(node.iter, nodes.Call)
+            or not isinstance(node.iter.func, nodes.Name)
+            or not node.iter.func.name == "enumerate"
+            or not node.iter.args
+            or not isinstance(node.iter.args[0], nodes.Name)
+        ):
+            return
+
+        if not isinstance(node.target, nodes.Tuple) or len(node.target.elts) < 2:
+            # enumerate() result is being assigned without destructuring
+            return
+
+        if not isinstance(node.target.elts[1], nodes.AssignName):
+            # The value is not being assigned to a single variable, e.g. being
+            # destructured, so we can't necessarily use it.
+            return
+
+        iterating_object_name = node.iter.args[0].name
+        value_variable = node.target.elts[1]
+
+        # Store potential violations. These will only be reported if we don't
+        # discover any writes to the collection during the loop.
+        bad_nodes = []
+
+        children = (
+            node.body
+            if isinstance(node, nodes.For)
+            else list(node.parent.get_children())
+        )
+
+        # Check if there are any for / while loops within the loop in question;
+        # If so, we will be more conservative about reporting errors as we
+        # can't yet do proper control flow analysis to be sure when
+        # reassignment will affect us
+        nested_loops = itertools.chain.from_iterable(
+            child.nodes_of_class((nodes.For, nodes.While)) for child in children
+        )
+        has_nested_loops = next(nested_loops, None) is not None
+
+        for child in children:
+            for subscript in child.nodes_of_class(nodes.Subscript):
+                if isinstance(node, nodes.For) and _is_part_of_assignment_target(
+                    subscript
+                ):
+                    # Ignore this subscript if it is the target of an assignment
+                    # Early termination; after reassignment index lookup will be necessary
+                    return
+
+                if isinstance(subscript.parent, nodes.Delete):
+                    # Ignore this subscript if it's used with the delete keyword
+                    return
+
+                index = subscript.slice
+                if isinstance(index, nodes.Name):
+                    if (
+                        index.name != node.target.elts[0].name
+                        or iterating_object_name != subscript.value.as_string()
+                    ):
+                        continue
+
+                    if (
+                        isinstance(node, nodes.For)
+                        and index.lookup(index.name)[1][-1].lineno > node.lineno
+                    ):
+                        # Ignore this subscript if it has been redefined after
+                        # the for loop.
+                        continue
+
+                    if (
+                        isinstance(node, nodes.For)
+                        and index.lookup(value_variable.name)[1][-1].lineno
+                        > node.lineno
+                    ):
+                        # The variable holding the value from iteration has been
+                        # reassigned on a later line, so it can't be used.
+                        continue
+
+                    if has_nested_loops:
+                        # Have found a likely issue, but since there are nested
+                        # loops we don't want to report this unless we get to the
+                        # end of the loop without updating the collection
+                        bad_nodes.append(subscript)
+                    else:
                         self.add_message(
-                            "unnecessary-dict-index-lookup",
+                            "unnecessary-list-index-lookup",
                             node=subscript,
-                            args=("1".join(value.as_string().rsplit("0", maxsplit=1)),),
+                            args=(node.target.elts[1].name,),
+                            confidence=HIGH,
                         )
+
+        for subscript in bad_nodes:
+            self.add_message(
+                "unnecessary-list-index-lookup",
+                node=subscript,
+                args=(node.target.elts[1].name,),
+                confidence=HIGH,
+            )

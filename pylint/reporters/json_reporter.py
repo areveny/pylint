@@ -1,62 +1,121 @@
-# Copyright (c) 2014 Vlad Temian <vladtemian@gmail.com>
-# Copyright (c) 2015-2020 Claudiu Popa <pcmanticore@gmail.com>
-# Copyright (c) 2015 Ionel Cristian Maries <contact@ionelmc.ro>
-# Copyright (c) 2017 guillaume2 <guillaume.peillex@gmail.col>
-# Copyright (c) 2019-2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
-# Copyright (c) 2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2020 Clément Pit-Claudel <cpitclaudel@users.noreply.github.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
-# Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 """JSON reporter."""
+
+from __future__ import annotations
+
 import json
+import sys
 from typing import TYPE_CHECKING, Optional
 
-from pylint.interfaces import IReporter
+from pylint.interfaces import UNDEFINED
+from pylint.message import Message
 from pylint.reporters.base_reporter import BaseReporter
+from pylint.typing import MessageLocationTuple
+
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from pylint.lint.pylinter import PyLinter
     from pylint.reporters.ureports.nodes import Section
 
+# Since message-id is an invalid name we need to use the alternative syntax
+OldJsonExport = TypedDict(
+    "OldJsonExport",
+    {
+        "type": str,
+        "module": str,
+        "obj": str,
+        "line": int,
+        "column": int,
+        "endLine": Optional[int],
+        "endColumn": Optional[int],
+        "path": str,
+        "symbol": str,
+        "message": str,
+        "message-id": str,
+    },
+)
 
-class JSONReporter(BaseReporter):
+
+class BaseJSONReporter(BaseReporter):
     """Report messages and layouts in JSON."""
 
-    __implements__ = IReporter
     name = "json"
     extension = "json"
 
-    def display_messages(self, layout: Optional["Section"]) -> None:
+    def display_messages(self, layout: Section | None) -> None:
         """Launch layouts display."""
-        json_dumpable = [
-            {
-                "type": msg.category,
-                "module": msg.module,
-                "obj": msg.obj,
-                "line": msg.line,
-                "column": msg.column,
-                "endLine": msg.end_line,
-                "endColumn": msg.end_column,
-                "path": msg.path,
-                "symbol": msg.symbol,
-                "message": msg.msg or "",
-                "message-id": msg.msg_id,
-            }
-            for msg in self.messages
-        ]
+        json_dumpable = [self.serialize(message) for message in self.messages]
         print(json.dumps(json_dumpable, indent=4), file=self.out)
 
-    def display_reports(self, layout: "Section") -> None:
+    def display_reports(self, layout: Section) -> None:
         """Don't do anything in this reporter."""
 
-    def _display(self, layout: "Section") -> None:
+    def _display(self, layout: Section) -> None:
         """Do nothing."""
 
+    @staticmethod
+    def serialize(message: Message) -> OldJsonExport:
+        raise NotImplementedError
 
-def register(linter: "PyLinter") -> None:
+    @staticmethod
+    def deserialize(message_as_json: OldJsonExport) -> Message:
+        raise NotImplementedError
+
+
+class JSONReporter(BaseJSONReporter):
+
+    """
+    TODO: 3.0: Remove this JSONReporter in favor of the new one handling abs-path
+    and confidence.
+
+    TODO: 2.15: Add a new JSONReporter handling abs-path, confidence and scores.
+    (Ultimately all other breaking change related to json for 3.0).
+    """
+
+    @staticmethod
+    def serialize(message: Message) -> OldJsonExport:
+        return {
+            "type": message.category,
+            "module": message.module,
+            "obj": message.obj,
+            "line": message.line,
+            "column": message.column,
+            "endLine": message.end_line,
+            "endColumn": message.end_column,
+            "path": message.path,
+            "symbol": message.symbol,
+            "message": message.msg or "",
+            "message-id": message.msg_id,
+        }
+
+    @staticmethod
+    def deserialize(message_as_json: OldJsonExport) -> Message:
+        return Message(
+            msg_id=message_as_json["message-id"],
+            symbol=message_as_json["symbol"],
+            msg=message_as_json["message"],
+            location=MessageLocationTuple(
+                # TODO: 3.0: Add abs-path and confidence in a new JSONReporter
+                abspath=message_as_json["path"],
+                path=message_as_json["path"],
+                module=message_as_json["module"],
+                obj=message_as_json["obj"],
+                line=message_as_json["line"],
+                column=message_as_json["column"],
+                end_line=message_as_json["endLine"],
+                end_column=message_as_json["endColumn"],
+            ),
+            # TODO: 3.0: Make confidence available in a new JSONReporter
+            confidence=UNDEFINED,
+        )
+
+
+def register(linter: PyLinter) -> None:
     linter.register_reporter(JSONReporter)

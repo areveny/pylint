@@ -1,48 +1,22 @@
-# Copyright (c) 2006-2011, 2013-2014 LOGILAB S.A. (Paris, FRANCE) <contact@logilab.fr>
-# Copyright (c) 2011-2014 Google, Inc.
-# Copyright (c) 2012 Tim Hatch <tim@timhatch.com>
-# Copyright (c) 2013-2020 Claudiu Popa <pcmanticore@gmail.com>
-# Copyright (c) 2014 Brett Cannon <brett@python.org>
-# Copyright (c) 2014 Arun Persaud <arun@nubati.net>
-# Copyright (c) 2015 Rene Zhang <rz99@cornell.edu>
-# Copyright (c) 2015 Florian Bruhin <me@the-compiler.org>
-# Copyright (c) 2015 Steven Myint <hg@stevenmyint.com>
-# Copyright (c) 2015 Ionel Cristian Maries <contact@ionelmc.ro>
-# Copyright (c) 2016 Erik <erik.eriksson@yahoo.com>
-# Copyright (c) 2016 Jakub Wilk <jwilk@jwilk.net>
-# Copyright (c) 2017 Łukasz Rogalski <rogalski.91@gmail.com>
-# Copyright (c) 2017 Martin von Gagern <gagern@google.com>
-# Copyright (c) 2018 Lucas Cimon <lucas.cimon@gmail.com>
-# Copyright (c) 2018 ssolanki <sushobhitsolanki@gmail.com>
-# Copyright (c) 2018 Natalie Serebryakova <natalie.serebryakova@Natalies-MacBook-Pro.local>
-# Copyright (c) 2018 Sushobhit <31987769+sushobhit27@users.noreply.github.com>
-# Copyright (c) 2018 Carey Metcalfe <carey@cmetcalfe.ca>
-# Copyright (c) 2018 Mike Frysinger <vapier@gmail.com>
-# Copyright (c) 2018 Alexander Todorov <atodorov@otb.bg>
-# Copyright (c) 2018 Ville Skyttä <ville.skytta@iki.fi>
-# Copyright (c) 2019, 2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2019 Djailla <bastien.vallet@gmail.com>
-# Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
-# Copyright (c) 2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2020 Ram Rachum <ram@rachum.com>
-# Copyright (c) 2020 Anthony Sottile <asottile@umich.edu>
-# Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-# Copyright (c) 2021 Nick Drozd <nicholasdrozd@gmail.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
-
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 """Checks for various exception related errors."""
+
+from __future__ import annotations
+
 import builtins
 import inspect
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import astroid
 from astroid import nodes, objects
 
-from pylint import checkers, interfaces
+from pylint import checkers
 from pylint.checkers import utils
+from pylint.interfaces import HIGH
+from pylint.typing import MessageDefinitionTuple
 
 if TYPE_CHECKING:
     from pylint.lint import PyLinter
@@ -58,6 +32,7 @@ def _builtin_exceptions():
 
 def _annotated_unpack_infer(stmt, context=None):
     """Recursively generate nodes inferred by the given statement.
+
     If the inferred value is a list or a tuple, recurse on the elements.
     Returns an iterator which yields tuples in the format
     ('original node', 'inferred node').
@@ -74,14 +49,16 @@ def _annotated_unpack_infer(stmt, context=None):
         yield stmt, inferred
 
 
-def _is_raising(body: List) -> bool:
+def _is_raising(body: list) -> bool:
     """Return whether the given statement node raises an exception."""
     return any(isinstance(node, nodes.Raise) for node in body)
 
 
 OVERGENERAL_EXCEPTIONS = ("BaseException", "Exception")
 
-MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
+MSGS: dict[
+    str, MessageDefinitionTuple
+] = {  # pylint: disable=consider-using-namedtuple-or-dataclass
     "E0701": (
         "Bad except clauses order (%s)",
         "bad-except-order",
@@ -92,8 +69,8 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
     "E0702": (
         "Raising %s while only classes or instances are allowed",
         "raising-bad-type",
-        "Used when something which is neither a class, an instance or a "
-        "string is raised (i.e. a `TypeError` will be raised).",
+        "Used when something which is neither a class nor an instance "
+        "is raised (i.e. a `TypeError` will be raised).",
     ),
     "E0703": (
         "Exception context set to something which is not an exception, nor None",
@@ -155,13 +132,13 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
         "try-except-raise block!",
     ),
     "W0707": (
-        "Consider explicitly re-raising using the 'from' keyword",
+        "Consider explicitly re-raising using %s'%s from %s'",
         "raise-missing-from",
-        "Python 3's exception chaining means it shows the traceback of the "
-        "current exception, but also the original exception. Not using `raise "
-        "from` makes the traceback inaccurate, because the message implies "
-        "there is a bug in the exception-handling code itself, which is a "
-        "separate situation than wrapping an exception.",
+        "Python's exception chaining shows the traceback of the current exception, "
+        "but also of the original exception. When you raise a new exception after "
+        "another exception was caught it's likely that the second exception is a "
+        "friendly re-wrapping of the first exception. In such cases `raise from` "
+        "provides a better link between the two tracebacks in the final error.",
     ),
     "W0711": (
         'Exception to catch is the result of a binary "%s" operation',
@@ -257,11 +234,8 @@ class ExceptionRaiseLeafVisitor(BaseVisitor):
 class ExceptionsChecker(checkers.BaseChecker):
     """Exception related checks."""
 
-    __implements__ = interfaces.IAstroidChecker
-
     name = "exceptions"
     msgs = MSGS
-    priority = -4
     options = (
         (
             "overgeneral-exceptions",
@@ -269,9 +243,7 @@ class ExceptionsChecker(checkers.BaseChecker):
                 "default": OVERGENERAL_EXCEPTIONS,
                 "type": "csv",
                 "metavar": "<comma-separated class names>",
-                "help": "Exceptions that will emit a warning "  # pylint: disable=consider-using-f-string
-                'when being caught. Defaults to "%s".'
-                % (", ".join(OVERGENERAL_EXCEPTIONS),),
+                "help": "Exceptions that will emit a warning when caught.",
             },
         ),
     )
@@ -280,7 +252,7 @@ class ExceptionsChecker(checkers.BaseChecker):
         self._builtin_exceptions = _builtin_exceptions()
         super().open()
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "misplaced-bare-raise",
         "raising-bad-type",
         "raising-non-exception",
@@ -302,13 +274,10 @@ class ExceptionsChecker(checkers.BaseChecker):
         expr = node.exc
         ExceptionRaiseRefVisitor(self, node).visit(expr)
 
-        try:
-            inferred_value = expr.inferred()[-1]
-        except astroid.InferenceError:
-            pass
-        else:
-            if inferred_value:
-                ExceptionRaiseLeafVisitor(self, node).visit(inferred_value)
+        inferred = utils.safe_infer(expr)
+        if inferred is None or inferred is astroid.Uninferable:
+            return
+        ExceptionRaiseLeafVisitor(self, node).visit(inferred)
 
     def _check_misplaced_bare_raise(self, node):
         # Filter out if it's present in __exit__.
@@ -366,16 +335,33 @@ class ExceptionsChecker(checkers.BaseChecker):
         if containing_except_node.name is None:
             # The `except` doesn't have an `as exception:` part, meaning there's no way that
             # the `raise` is raising the same exception.
-            self.add_message("raise-missing-from", node=node)
-        elif isinstance(node.exc, nodes.Call) and isinstance(node.exc.func, nodes.Name):
-            # We have a `raise SomeException(whatever)`.
-            self.add_message("raise-missing-from", node=node)
+            class_of_old_error = "Exception"
+            if isinstance(containing_except_node.type, (nodes.Name, nodes.Tuple)):
+                # 'except ZeroDivisionError' or 'except (ZeroDivisionError, ValueError)'
+                class_of_old_error = containing_except_node.type.as_string()
+            self.add_message(
+                "raise-missing-from",
+                node=node,
+                args=(
+                    f"'except {class_of_old_error} as exc' and ",
+                    node.as_string(),
+                    "exc",
+                ),
+                confidence=HIGH,
+            )
         elif (
-            isinstance(node.exc, nodes.Name)
+            isinstance(node.exc, nodes.Call)
+            and isinstance(node.exc.func, nodes.Name)
+            or isinstance(node.exc, nodes.Name)
             and node.exc.name != containing_except_node.name.name
         ):
-            # We have a `raise SomeException`.
-            self.add_message("raise-missing-from", node=node)
+            # We have a `raise SomeException(whatever)` or a `raise SomeException`
+            self.add_message(
+                "raise-missing-from",
+                node=node,
+                args=("", node.as_string(), containing_except_node.name.name),
+                confidence=HIGH,
+            )
 
     def _check_catching_non_exception(self, handler, exc, part):
         if isinstance(exc, nodes.Tuple):
@@ -428,8 +414,8 @@ class ExceptionsChecker(checkers.BaseChecker):
     def _check_try_except_raise(self, node):
         def gather_exceptions_from_handler(
             handler,
-        ) -> Optional[List[nodes.NodeNG]]:
-            exceptions: List[nodes.NodeNG] = []
+        ) -> list[nodes.NodeNG] | None:
+            exceptions: list[nodes.NodeNG] = []
             if handler.type:
                 exceptions_in_handler = utils.safe_infer(handler.type)
                 if isinstance(exceptions_in_handler, nodes.Tuple):
@@ -482,21 +468,21 @@ class ExceptionsChecker(checkers.BaseChecker):
             if bare_raise:
                 self.add_message("try-except-raise", node=handler_having_bare_raise)
 
-    @utils.check_messages("wrong-exception-operation")
+    @utils.only_required_for_messages("wrong-exception-operation")
     def visit_binop(self, node: nodes.BinOp) -> None:
         if isinstance(node.parent, nodes.ExceptHandler):
             # except (V | A)
             suggestion = f"Did you mean '({node.left.as_string()}, {node.right.as_string()})' instead?"
             self.add_message("wrong-exception-operation", node=node, args=(suggestion,))
 
-    @utils.check_messages("wrong-exception-operation")
+    @utils.only_required_for_messages("wrong-exception-operation")
     def visit_compare(self, node: nodes.Compare) -> None:
         if isinstance(node.parent, nodes.ExceptHandler):
             # except (V < A)
             suggestion = f"Did you mean '({node.left.as_string()}, {', '.join(operand.as_string() for _, operand in node.ops)})' instead?"
             self.add_message("wrong-exception-operation", node=node, args=(suggestion,))
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "bare-except",
         "broad-except",
         "try-except-raise",
@@ -508,7 +494,7 @@ class ExceptionsChecker(checkers.BaseChecker):
     def visit_tryexcept(self, node: nodes.TryExcept) -> None:
         """Check for empty except."""
         self._check_try_except_raise(node)
-        exceptions_classes: List[Any] = []
+        exceptions_classes: list[Any] = []
         nb_handlers = len(node.handlers)
         for index, handler in enumerate(node.handlers):
             if handler.type is None:
@@ -557,7 +543,7 @@ class ExceptionsChecker(checkers.BaseChecker):
                                 "bad-except-order", node=handler.type, args=msg
                             )
                     if (
-                        exception.name in self.config.overgeneral_exceptions
+                        exception.name in self.linter.config.overgeneral_exceptions
                         and exception.root().name == utils.EXCEPTIONS_MODULE
                         and not _is_raising(handler.body)
                     ):
@@ -573,5 +559,5 @@ class ExceptionsChecker(checkers.BaseChecker):
                 exceptions_classes += [exc for _, exc in exceptions]
 
 
-def register(linter: "PyLinter") -> None:
+def register(linter: PyLinter) -> None:
     linter.register_checker(ExceptionsChecker(linter))

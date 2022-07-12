@@ -1,6 +1,6 @@
 """Test PEP 604 - Alternative Union syntax"""
 # pylint: disable=missing-function-docstring,unused-argument,invalid-name,missing-class-docstring
-# pylint: disable=inherit-non-class,too-few-public-methods
+# pylint: disable=inherit-non-class,too-few-public-methods,unnecessary-direct-lambda-call
 import dataclasses
 import typing
 from dataclasses import dataclass
@@ -82,3 +82,23 @@ class CustomDataClass3:
 @dataclasses.dataclass
 class CustomDataClass4:
     my_var: int | str
+
+class ForwardMetaclass(type):
+    def __or__(cls, other):
+        return True
+
+class ReverseMetaclass(type):
+    def __ror__(cls, other):
+        return True
+
+class WithForward(metaclass=ForwardMetaclass):
+    pass
+
+class WithReverse(metaclass=ReverseMetaclass):
+    pass
+
+class DefaultMetaclass:
+    pass
+
+class_list = [WithForward | DefaultMetaclass]
+class_list_reversed = [WithReverse | DefaultMetaclass]

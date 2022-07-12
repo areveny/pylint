@@ -1,15 +1,20 @@
+# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+# For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
+
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from astroid import nodes
 
-from pylint.checkers import BaseChecker
-from pylint.interfaces import IRawChecker
+from pylint.checkers import BaseRawFileChecker
 
 if TYPE_CHECKING:
     from pylint.lint import PyLinter
 
 
-def is_line_commented(line):
+def is_line_commented(line: bytes) -> bool:
     """Checks if a `# symbol that is not part of a string was found in line."""
 
     comment_idx = line.find(b"#")
@@ -20,7 +25,7 @@ def is_line_commented(line):
     return True
 
 
-def comment_part_of_string(line, comment_idx):
+def comment_part_of_string(line: bytes, comment_idx: int) -> bool:
     """Checks if the symbol at comment_idx is part of a string."""
 
     if (
@@ -34,10 +39,9 @@ def comment_part_of_string(line, comment_idx):
     return False
 
 
-class CommentChecker(BaseChecker):
-    __implements__ = IRawChecker
+class CommentChecker(BaseRawFileChecker):
 
-    name = "refactoring"
+    name = "empty-comment"
     msgs = {
         "R2044": (
             "Line with empty comment",
@@ -48,7 +52,6 @@ class CommentChecker(BaseChecker):
         )
     }
     options = ()
-    priority = -1  # low priority
 
     def process_module(self, node: nodes.Module) -> None:
         with node.stream() as stream:
@@ -59,5 +62,5 @@ class CommentChecker(BaseChecker):
                         self.add_message("empty-comment", line=line_num + 1)
 
 
-def register(linter: "PyLinter") -> None:
+def register(linter: PyLinter) -> None:
     linter.register_checker(CommentChecker(linter))

@@ -1,7 +1,10 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
-from typing import ValuesView
+from __future__ import annotations
+
+from collections.abc import ValuesView
 
 from pylint.interfaces import HIGH
 from pylint.message import Message
@@ -52,5 +55,7 @@ def test_new_message(message_definitions: ValuesView[MessageDefinition]) -> None
     )
     e1234 = build_message(e1234_message_definition, e1234_location_values)
     w1234 = build_message(w1234_message_definition, w1234_location_values)
+    assert e1234.location == e1234_location_values
+    assert w1234.location == w1234_location_values
     assert e1234.format(template) == expected
     assert w1234.format(template) == "8:11:12: W1234: message (msg-symbol)"

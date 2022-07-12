@@ -1,7 +1,10 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
-from typing import TYPE_CHECKING, Union
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from astroid import nodes
 
@@ -21,8 +24,6 @@ class ModifiedIterationChecker(checkers.BaseChecker):
 
     Currently supports `for` loops for Sets, Dictionaries and Lists.
     """
-
-    __implements__ = interfaces.IAstroidChecker
 
     name = "modified_iteration"
 
@@ -49,9 +50,8 @@ class ModifiedIterationChecker(checkers.BaseChecker):
     }
 
     options = ()
-    priority = -2
 
-    @utils.check_messages(
+    @utils.only_required_for_messages(
         "modified-iterating-list", "modified-iterating-dict", "modified-iterating-set"
     )
     def visit_for(self, node: nodes.For) -> None:
@@ -71,7 +71,19 @@ class ModifiedIterationChecker(checkers.BaseChecker):
         self, node: nodes.NodeNG, iter_obj: nodes.NodeNG
     ) -> None:
         msg_id = None
-        if self._modified_iterating_list_cond(node, iter_obj):
+        if isinstance(node, nodes.Delete) and any(
+            self._deleted_iteration_target_cond(t, iter_obj) for t in node.targets
+        ):
+            inferred = utils.safe_infer(iter_obj)
+            if isinstance(inferred, nodes.List):
+                msg_id = "modified-iterating-list"
+            elif isinstance(inferred, nodes.Dict):
+                msg_id = "modified-iterating-dict"
+            elif isinstance(inferred, nodes.Set):
+                msg_id = "modified-iterating-set"
+        elif not isinstance(iter_obj, nodes.Name):
+            pass
+        elif self._modified_iterating_list_cond(node, iter_obj):
             msg_id = "modified-iterating-list"
         elif self._modified_iterating_dict_cond(node, iter_obj):
             msg_id = "modified-iterating-dict"
@@ -98,7 +110,7 @@ class ModifiedIterationChecker(checkers.BaseChecker):
     def _common_cond_list_set(
         node: nodes.Expr,
         iter_obj: nodes.NodeNG,
-        infer_val: Union[nodes.List, nodes.Set],
+        infer_val: nodes.List | nodes.Set,
     ) -> bool:
         return (infer_val == utils.safe_infer(iter_obj)) and (
             node.value.func.expr.name == iter_obj.name
@@ -129,6 +141,15 @@ class ModifiedIterationChecker(checkers.BaseChecker):
     ) -> bool:
         if not self._is_node_assigns_subscript_name(node):
             return False
+        # Do not emit when merely updating the same key being iterated
+        if (
+            isinstance(iter_obj, nodes.Name)
+            and iter_obj.name == node.targets[0].value.name
+            and isinstance(iter_obj.parent.target, nodes.AssignName)
+            and isinstance(node.targets[0].slice, nodes.Name)
+            and iter_obj.parent.target.name == node.targets[0].slice.name
+        ):
+            return False
         infer_val = utils.safe_infer(node.targets[0].value)
         if not isinstance(infer_val, nodes.Dict):
             return False
@@ -149,6 +170,22 @@ class ModifiedIterationChecker(checkers.BaseChecker):
             and node.value.func.attrname in _SET_MODIFIER_METHODS
         )
 
+    def _deleted_iteration_target_cond(
+        self, node: nodes.DelName, iter_obj: nodes.NodeNG
+    ) -> bool:
+        if not isinstance(node, nodes.DelName):
+            return False
+        if not isinstance(iter_obj.parent, nodes.For):
+            return False
+        if not isinstance(
+            iter_obj.parent.target, (nodes.AssignName, nodes.BaseContainer)
+        ):
+            return False
+        return any(
+            t == node.name
+            for t in utils.find_assigned_names_recursive(iter_obj.parent.target)
+        )
 
-def register(linter: "PyLinter") -> None:
+
+def register(linter: PyLinter) -> None:
     linter.register_checker(ModifiedIterationChecker(linter))

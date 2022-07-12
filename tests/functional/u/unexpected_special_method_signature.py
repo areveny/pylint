@@ -30,6 +30,9 @@ class Invalid(object):
     def __getattr__(self, nanana): # [unexpected-special-method-signature]
         pass
 
+    def __subclasses__(self, blabla):  # [unexpected-special-method-signature]
+        pass
+
 
 class FirstBadContextManager(object):
     def __enter__(self):
@@ -100,6 +103,10 @@ class Valid(object):
     def __getitem__(index):
         pass
 
+    @classmethod
+    def __init_subclass__(cls, blabla):
+        pass
+
 
 class FirstGoodContextManager(object):
     def __enter__(self):
@@ -118,3 +125,14 @@ class ThirdGoodContextManager(object):
         return self
     def __exit__(self, exc_type, *args):
         pass
+
+
+# unexpected-special-method-signature
+# https://github.com/PyCQA/pylint/issues/6644
+class Philosopher:
+    def __init_subclass__(cls, default_name, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.default_name = default_name
+
+class AustralianPhilosopher(Philosopher, default_name="Bruce"):
+    pass

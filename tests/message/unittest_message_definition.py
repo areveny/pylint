@@ -1,5 +1,6 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 import sys
 from unittest import mock
@@ -9,6 +10,7 @@ import pytest
 from pylint.checkers import BaseChecker
 from pylint.constants import WarningScope
 from pylint.exceptions import InvalidMessageError
+from pylint.lint.pylinter import PyLinter
 from pylint.message import MessageDefinition
 
 
@@ -32,6 +34,9 @@ def test_create_invalid_message_type(msgid, expected):
 
 
 class FalseChecker(BaseChecker):
+    def __init__(self) -> None:
+        super().__init__(PyLinter())
+
     name = "FalseChecker"
     msgs = {
         "W1234": ("message one", "msg-symbol-one", "msg description"),
@@ -59,7 +64,6 @@ class TestMessagesDefinition:
 
     @staticmethod
     def get_message_definition() -> MessageDefinition:
-        kwargs = {"minversion": None, "maxversion": None}
         return MessageDefinition(
             FalseChecker(),
             "W1234",
@@ -67,7 +71,6 @@ class TestMessagesDefinition:
             "description",
             "msg-symbol",
             WarningScope.NODE,
-            **kwargs,
         )
 
     def test_may_be_emitted(self) -> None:

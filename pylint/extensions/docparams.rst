@@ -1,13 +1,13 @@
 If you document the parameters of your functions, methods and constructors and
 their types systematically in your code this optional component might
 be useful for you. Sphinx style, Google style, and Numpy style are supported.
-(For some examples, see https://pypi.python.org/pypi/sphinxcontrib-napoleon .)
+(For some examples, see https://pypi.org/project/sphinxcontrib-napoleon/ .)
 
 You can activate this checker by adding the line::
 
     load-plugins=pylint.extensions.docparams
 
-to the ``MASTER`` section of your ``.pylintrc``.
+to the ``MAIN`` section of your ``.pylintrc``.
 
 This checker verifies that all function, method, and constructor docstrings
 include documentation of the

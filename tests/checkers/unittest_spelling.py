@@ -1,22 +1,6 @@
-# Copyright (c) 2014-2018, 2020 Claudiu Popa <pcmanticore@gmail.com>
-# Copyright (c) 2014 Michal Nowikowski <godfryd@gmail.com>
-# Copyright (c) 2015 Ionel Cristian Maries <contact@ionelmc.ro>
-# Copyright (c) 2016 Derek Gustafson <degustaf@gmail.com>
-# Copyright (c) 2017, 2020 Pedro Algarvio <pedro@algarvio.me>
-# Copyright (c) 2017 Łukasz Rogalski <rogalski.91@gmail.com>
-# Copyright (c) 2018, 2020 Anthony Sottile <asottile@umich.edu>
-# Copyright (c) 2019-2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2019 Ashley Whetter <ashley@awhetter.co.uk>
-# Copyright (c) 2019 agutole <toldo_carp@hotmail.com>
-# Copyright (c) 2020 Ganden Schaffner <gschaffner@pm.me>
-# Copyright (c) 2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2021 Jaehoon Hwang <jaehoonhwang@users.noreply.github.com>
-# Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
-# Copyright (c) 2021 Eli Fine <ejfine@gmail.com>
-
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 """Unittest for the spelling checker."""
 
@@ -122,16 +106,6 @@ class TestSpellingChecker(CheckerTestCase):  # pylint:disable=too-many-public-me
             )
         ):
             self.checker.visit_classdef(stmt)
-
-    @pytest.mark.skipif(True, reason="pyenchant's tokenizer strips these")
-    @skip_on_missing_package_or_dict
-    @set_config(spelling_dict=spell_dict)
-    def test_invalid_docstring_characters(self):
-        stmt = astroid.extract_node('def fff():\n   """test\\x00"""\n   pass')
-        with self.assertAddsMessages(
-            MessageTest("invalid-characters-in-docstring", line=2, args=("test\x00",))
-        ):
-            self.checker.visit_functiondef(stmt)
 
     @skip_on_missing_package_or_dict
     @set_config(spelling_dict=spell_dict)
@@ -326,13 +300,13 @@ class TestSpellingChecker(CheckerTestCase):  # pylint:disable=too-many-public-me
             ("noqa", ":", "flake8 / zimports directive"),
             ("nosec", "", "bandit directive"),
             ("isort", ":skip", "isort directive"),
-            ("mypy", ":", "mypy directive"),
+            ("mypy", ":", "mypy top of file directive"),
         ),
     )
     def test_skip_tool_directives_at_beginning_of_comments_but_still_raise_error_if_directive_appears_later_in_comment(  # pylint:disable=unused-argument
         # Having the extra description parameter allows the description
         #   to show up in the pytest output as part of the test name
-        #   when running parametrized tests.
+        #   when running parameterized tests.
         self,
         misspelled_portion_of_directive,
         second_portion_of_directive,
@@ -384,6 +358,24 @@ class TestSpellingChecker(CheckerTestCase):  # pylint:disable=too-many-public-me
                     full_comment,
                     "                 ^^^^^",
                     self._get_msg_suggestions("qsize"),
+                ),
+            )
+        ):
+            self.checker.process_tokens(_tokenize_str(full_comment))
+
+    @skip_on_missing_package_or_dict
+    @set_config(spelling_dict=spell_dict)
+    def test_skip_mypy_ignore_directives(self):
+        full_comment = "# type: ignore[attr-defined] attr"
+        with self.assertAddsMessages(
+            MessageTest(
+                "wrong-spelling-in-comment",
+                line=1,
+                args=(
+                    "attr",
+                    full_comment,
+                    "   ^^^^",
+                    self._get_msg_suggestions("attr"),
                 ),
             )
         ):

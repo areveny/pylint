@@ -1,27 +1,28 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
+
+from __future__ import annotations
+
 import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import Dict, Union
 
 import pytest
 from pytest import LogCaptureFixture
 
-from pylint.testutils.primer import PackageToLint
+from pylint.testutils._primer import PackageToLint
 
-PRIMER_DIRECTORY = Path(".pylint_primer_tests/").resolve()
+PRIMER_DIRECTORY = (Path("tests") / ".pylint_primer_tests/").resolve()
 
 
-def get_packages_to_lint_from_json(
-    json_path: Union[Path, str]
-) -> Dict[str, PackageToLint]:
-    result: Dict[str, PackageToLint] = {}
+def get_packages_to_lint_from_json(json_path: Path | str) -> dict[str, PackageToLint]:
     with open(json_path, encoding="utf8") as f:
-        for name, package_data in json.load(f).items():
-            result[name] = PackageToLint(**package_data)
-    return result
+        return {
+            name: PackageToLint(**package_data)
+            for name, package_data in json.load(f).items()
+        }
 
 
 PACKAGE_TO_LINT_JSON_BATCH_ONE = (
@@ -32,14 +33,6 @@ PACKAGES_TO_LINT_BATCH_ONE = get_packages_to_lint_from_json(
 )
 """Dictionary of external packages used during the primer test in batch one."""
 
-PACKAGE_TO_LINT_JSON_BATCH_TWO = (
-    Path(__file__).parent / "packages_to_lint_batch_two.json"
-)
-PACKAGES_TO_LINT_BATCH_TWO = get_packages_to_lint_from_json(
-    PACKAGE_TO_LINT_JSON_BATCH_TWO
-)
-"""Dictionary of external packages used during the primer test in batch two."""
-
 
 class TestPrimer:
     @staticmethod
@@ -48,18 +41,6 @@ class TestPrimer:
         "package", PACKAGES_TO_LINT_BATCH_ONE.values(), ids=PACKAGES_TO_LINT_BATCH_ONE
     )
     def test_primer_external_packages_no_crash_batch_one(
-        package: PackageToLint,
-        caplog: LogCaptureFixture,
-    ) -> None:
-        __tracebackhide__ = True  # pylint: disable=unused-variable
-        TestPrimer._primer_test(package, caplog)
-
-    @staticmethod
-    @pytest.mark.primer_external_batch_two
-    @pytest.mark.parametrize(
-        "package", PACKAGES_TO_LINT_BATCH_TWO.values(), ids=PACKAGES_TO_LINT_BATCH_TWO
-    )
-    def test_primer_external_packages_no_crash_batch_two(
         package: PackageToLint,
         caplog: LogCaptureFixture,
     ) -> None:

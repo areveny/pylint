@@ -1,58 +1,18 @@
-# Copyright (c) 2006-2016 LOGILAB S.A. (Paris, FRANCE) <contact@logilab.fr>
-# Copyright (c) 2010 Maarten ter Huurne <maarten@treewalker.org>
-# Copyright (c) 2012-2014 Google, Inc.
-# Copyright (c) 2012 FELD Boris <lothiraldan@gmail.com>
-# Copyright (c) 2013-2020 Claudiu Popa <pcmanticore@gmail.com>
-# Copyright (c) 2014 Michal Nowikowski <godfryd@gmail.com>
-# Copyright (c) 2014 Brett Cannon <brett@python.org>
-# Copyright (c) 2014 Arun Persaud <arun@nubati.net>
-# Copyright (c) 2014 David Pursehouse <david.pursehouse@gmail.com>
-# Copyright (c) 2015 Dmitry Pribysh <dmand@yandex.ru>
-# Copyright (c) 2015 Ionel Cristian Maries <contact@ionelmc.ro>
-# Copyright (c) 2016-2017 Łukasz Rogalski <rogalski.91@gmail.com>
-# Copyright (c) 2016 Alexander Todorov <atodorov@otb.bg>
-# Copyright (c) 2016 Anthony Foglia <afoglia@users.noreply.github.com>
-# Copyright (c) 2016 Florian Bruhin <me@the-compiler.org>
-# Copyright (c) 2016 Moises Lopez <moylop260@vauxoo.com>
-# Copyright (c) 2016 Jakub Wilk <jwilk@jwilk.net>
-# Copyright (c) 2017, 2019-2020 hippo91 <guillaume.peillex@gmail.com>
-# Copyright (c) 2018, 2021 Ville Skyttä <ville.skytta@iki.fi>
-# Copyright (c) 2018, 2020 Anthony Sottile <asottile@umich.edu>
-# Copyright (c) 2018-2019 Nick Drozd <nicholasdrozd@gmail.com>
-# Copyright (c) 2018-2019 Ashley Whetter <ashley@awhetter.co.uk>
-# Copyright (c) 2018 Lucas Cimon <lucas.cimon@gmail.com>
-# Copyright (c) 2018 Bryce Guinta <bryce.paul.guinta@gmail.com>
-# Copyright (c) 2018 ssolanki <sushobhitsolanki@gmail.com>
-# Copyright (c) 2018 Ben Green <benhgreen@icloud.com>
-# Copyright (c) 2019-2021 Pierre Sassoulas <pierre.sassoulas@gmail.com>
-# Copyright (c) 2019 mattlbeck <17108752+mattlbeck@users.noreply.github.com>
-# Copyright (c) 2019-2020 craig-sh <craig-sh@users.noreply.github.com>
-# Copyright (c) 2019 Janne Rönkkö <jannero@users.noreply.github.com>
-# Copyright (c) 2019 Hugo van Kemenade <hugovk@users.noreply.github.com>
-# Copyright (c) 2019 Grygorii Iermolenko <gyermolenko@gmail.com>
-# Copyright (c) 2019 Andrzej Klajnert <github@aklajnert.pl>
-# Copyright (c) 2019 Pascal Corpet <pcorpet@users.noreply.github.com>
-# Copyright (c) 2020 GergelyKalmar <gergely.kalmar@logikal.jp>
-# Copyright (c) 2021 Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
-# Copyright (c) 2021 Marc Mueller <30130371+cdce8p@users.noreply.github.com>
-# Copyright (c) 2021 Mark Byrne <31762852+mbyrnepr2@users.noreply.github.com>
-# Copyright (c) 2021 Samuel Freilich <sfreilich@google.com>
-# Copyright (c) 2021 Nick Pesce <nickpesce22@gmail.com>
-# Copyright (c) 2021 bot <bot@noreply.github.com>
-# Copyright (c) 2021 Yu Shao, Pang <36848472+yushao2@users.noreply.github.com>
-# Copyright (c) 2021 SupImDos <62866982+SupImDos@users.noreply.github.com>
-# Copyright (c) 2021 Kayran Schmidt <59456929+yumasheta@users.noreply.github.com>
-# Copyright (c) 2021 Konstantina Saketou <56515303+ksaketou@users.noreply.github.com>
-# Copyright (c) 2021 James Sinclair <james@nurfherder.com>
-# Copyright (c) 2021 tiagohonorato <61059243+tiagohonorato@users.noreply.github.com>
-
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
 """Classes checker for Python code."""
+
+from __future__ import annotations
+
 import collections
+import sys
+from collections import defaultdict
+from collections.abc import Sequence
 from itertools import chain, zip_longest
-from typing import Dict, List, Pattern, Set
+from re import Pattern
+from typing import TYPE_CHECKING, Union
 
 import astroid
 from astroid import bases, nodes
@@ -60,7 +20,6 @@ from astroid import bases, nodes
 from pylint.checkers import BaseChecker, utils
 from pylint.checkers.utils import (
     PYMETHODS,
-    check_messages,
     class_is_abstract,
     decorated_with,
     decorated_with_property,
@@ -71,18 +30,27 @@ from pylint.checkers.utils import (
     is_builtin_object,
     is_comprehension,
     is_iterable,
-    is_overload_stub,
     is_property_setter,
     is_property_setter_or_deleter,
-    is_protocol_class,
     node_frame_class,
-    overrides_a_method,
+    only_required_for_messages,
     safe_infer,
     unimplemented_abstract_methods,
     uninferable_final_decorators,
 )
-from pylint.interfaces import INFERENCE, IAstroidChecker
-from pylint.utils import get_global_option
+from pylint.interfaces import HIGH, INFERENCE
+from pylint.typing import MessageDefinitionTuple
+
+if TYPE_CHECKING:
+    from pylint.lint.pylinter import PyLinter
+
+
+if sys.version_info >= (3, 8):
+    from functools import cached_property
+else:
+    from astroid.decorators import cachedproperty as cached_property
+
+_AccessNodes = Union[nodes.Attribute, nodes.AssignAttr]
 
 INVALID_BASE_CLASSES = {"bool", "range", "slice", "memoryview"}
 BUILTIN_DECORATORS = {"builtins.property", "builtins.classmethod"}
@@ -106,7 +74,7 @@ _ParameterSignature = collections.namedtuple(
 )
 
 
-def _signature_from_call(call):
+def _signature_from_call(call: nodes.Call) -> _CallSignature:
     kws = {}
     args = []
     starred_kws = []
@@ -114,7 +82,7 @@ def _signature_from_call(call):
     for keyword in call.keywords or []:
         arg, value = keyword.arg, keyword.value
         if arg is None and isinstance(value, nodes.Name):
-            # Starred node and we are interested only in names,
+            # Starred node, and we are interested only in names,
             # otherwise some transformation might occur for the parameter.
             starred_kws.append(value.name)
         elif isinstance(value, nodes.Name):
@@ -166,6 +134,59 @@ def _definition_equivalent_to_call(definition, call):
 
     # No extra kwargs in call.
     return all(kw in call.args or kw in definition.kwonlyargs for kw in call.kws)
+
+
+def _is_trivial_super_delegation(function: nodes.FunctionDef) -> bool:
+    """Check whether a function definition is a method consisting only of a
+    call to the same function on the superclass.
+    """
+    if (
+        not function.is_method()
+        # Adding decorators to a function changes behavior and
+        # constitutes a non-trivial change.
+        or function.decorators
+    ):
+        return False
+
+    body = function.body
+    if len(body) != 1:
+        # Multiple statements, which means this overridden method
+        # could do multiple things we are not aware of.
+        return False
+
+    statement = body[0]
+    if not isinstance(statement, (nodes.Expr, nodes.Return)):
+        # Doing something else than what we are interested in.
+        return False
+
+    call = statement.value
+    if (
+        not isinstance(call, nodes.Call)
+        # Not a super() attribute access.
+        or not isinstance(call.func, nodes.Attribute)
+    ):
+        return False
+
+    # Anything other than a super call is non-trivial.
+    super_call = safe_infer(call.func.expr)
+    if not isinstance(super_call, astroid.objects.Super):
+        return False
+
+    # The name should be the same.
+    if call.func.attrname != function.name:
+        return False
+
+    # Should be a super call with the MRO pointer being the
+    # current class and the type being the current instance.
+    current_scope = function.parent.scope()
+    if (
+        super_call.mro_pointer != current_scope
+        or not isinstance(super_call.type, astroid.Instance)
+        or super_call.type.name != current_scope.name
+    ):
+        return False
+
+    return True
 
 
 # Deal with parameters overriding in two methods.
@@ -228,19 +249,25 @@ def _has_different_parameters_default_value(original, overridden):
 
 
 def _has_different_parameters(
-    original: List[nodes.AssignName],
-    overridden: List[nodes.AssignName],
+    original: list[nodes.AssignName],
+    overridden: list[nodes.AssignName],
     dummy_parameter_regex: Pattern,
-) -> List[str]:
-    result = []
+) -> list[str]:
+    result: list[str] = []
     zipped = zip_longest(original, overridden)
     for original_param, overridden_param in zipped:
-        params = (original_param, overridden_param)
-        if not all(params):
+        if not overridden_param:
             return ["Number of parameters "]
 
+        if not original_param:
+            try:
+                overridden_param.parent.default_value(overridden_param.name)
+                continue
+            except astroid.NoDefault:
+                return ["Number of parameters "]
+
         # check for the arguments' name
-        names = [param.name for param in params]
+        names = [param.name for param in (original_param, overridden_param)]
         if any(dummy_parameter_regex.match(name) for name in names):
             continue
         if original_param.name != overridden_param.name:
@@ -252,11 +279,34 @@ def _has_different_parameters(
     return result
 
 
+def _has_different_keyword_only_parameters(
+    original: list[nodes.AssignName],
+    overridden: list[nodes.AssignName],
+) -> list[str]:
+    """Determine if the two methods have different keyword only parameters."""
+    original_names = [i.name for i in original]
+    overridden_names = [i.name for i in overridden]
+
+    if any(name not in overridden_names for name in original_names):
+        return ["Number of parameters "]
+
+    for name in overridden_names:
+        if name in original_names:
+            continue
+
+        try:
+            overridden[0].parent.default_value(name)
+        except astroid.NoDefault:
+            return ["Number of parameters "]
+
+    return []
+
+
 def _different_parameters(
     original: nodes.FunctionDef,
     overridden: nodes.FunctionDef,
     dummy_parameter_regex: Pattern,
-) -> List[str]:
+) -> list[str]:
     """Determine if the two methods have different parameters.
 
     They are considered to have different parameters if:
@@ -266,7 +316,6 @@ def _different_parameters(
        * one of the methods is having variadics, while the other is not
 
        * they have different keyword only parameters.
-
     """
     output_messages = []
     original_parameters = _positional_parameters(original)
@@ -294,8 +343,8 @@ def _different_parameters(
     different_positional = _has_different_parameters(
         original_parameters, overridden_parameters, dummy_parameter_regex
     )
-    different_kwonly = _has_different_parameters(
-        original_kwonlyargs, overridden.args.kwonlyargs, dummy_parameter_regex
+    different_kwonly = _has_different_keyword_only_parameters(
+        original_kwonlyargs, overridden.args.kwonlyargs
     )
     if different_kwonly and different_positional:
         if "Number " in different_positional[0] and "Number " in different_kwonly[0]:
@@ -355,7 +404,9 @@ def _has_data_descriptor(cls, attr):
 
 def _called_in_methods(func, klass, methods):
     """Check if the func was called in any of the given methods,
-    belonging to the *klass*. Returns True if so, False otherwise.
+    belonging to the *klass*.
+
+    Returns True if so, False otherwise.
     """
     if not isinstance(func, nodes.FunctionDef):
         return False
@@ -416,14 +467,6 @@ def _is_attribute_property(name, klass):
     return False
 
 
-def _has_bare_super_call(fundef_node):
-    for call in fundef_node.nodes_of_class(nodes.Call):
-        func = call.func
-        if isinstance(func, nodes.Name) and func.name == "super" and not call.args:
-            return True
-    return False
-
-
 def _has_same_layout_slots(slots, assigned_value):
     inferred = next(assigned_value.infer())
     if isinstance(inferred, nodes.ClassDef):
@@ -436,7 +479,7 @@ def _has_same_layout_slots(slots, assigned_value):
     return False
 
 
-MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
+MSGS: dict[str, MessageDefinitionTuple] = {
     "F0202": (
         "Unable to check methods signature (%s / %s)",
         "method-check-failed",
@@ -512,17 +555,12 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
         "valid-classmethod-first-arg option or "
         "valid-metaclass-classmethod-first-arg option as first argument.",
     ),
-    "R0201": (
-        "Method could be a function",
-        "no-self-use",
-        "Used when a method doesn't use its bound instance, and so could "
-        "be written as a function.",
-    ),
     "W0221": (
         "%s %s %r method",
         "arguments-differ",
         "Used when a method has a different number of arguments than in "
-        "the implemented interface or in an overridden method.",
+        "the implemented interface or in an overridden method. Extra arguments "
+        "with default values are ignored.",
     ),
     "W0222": (
         "Signature differs from %s %r method",
@@ -542,23 +580,19 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
         "Used when an ancestor class method has an __init__ method "
         "which is not called by a derived class.",
     ),
-    "W0232": (
-        "Class has no __init__ method",
-        "no-init",
-        "Used when a class has no __init__ method, neither its parent classes.",
-    ),
     "W0233": (
         "__init__ method from a non direct base class %r is called",
         "non-parent-init-called",
         "Used when an __init__ method is called on a class which is not "
         "in the direct ancestors for the analysed class.",
     ),
-    "W0235": (
-        "Useless super delegation in method %r",
-        "useless-super-delegation",
+    "W0246": (
+        "Useless parent or super() delegation in method %r",
+        "useless-parent-delegation",
         "Used whenever we can detect that an overridden method is useless, "
-        "relying on super() delegation to do the same thing as another method "
+        "relying on parent or super() delegation to do the same thing as another method "
         "from the MRO.",
+        {"old_names": [("W0235", "useless-super-delegation")]},
     ),
     "W0236": (
         "Method %r was expected to be %r, found it instead as %r",
@@ -593,6 +627,12 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
         "redefined-slots-in-subclass",
         "Used when a slot is re-defined in a subclass.",
     ),
+    "W0245": (
+        "Super call without brackets",
+        "super-without-brackets",
+        "Used when a call to super does not have brackets and thus is not an actual "
+        "call and does not work as expected.",
+    ),
     "E0236": (
         "Invalid object %r in __slots__, must contain only non empty strings",
         "invalid-slots-object",
@@ -622,7 +662,7 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
     "E0241": (
         "Duplicate bases for class %r",
         "duplicate-bases",
-        "Used when a class has duplicate bases.",
+        "Duplicate use of base classes in derived classes raise TypeErrors.",
     ),
     "E0242": (
         "Value %r in slots conflicts with class variable",
@@ -634,6 +674,12 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
         "invalid-class-object",
         "Used when an invalid object is assigned to a __class__ property. "
         "Only a class is permitted.",
+    ),
+    "E0244": (
+        'Extending inherited Enum class "%s"',
+        "invalid-enum-extension",
+        "Used when a class tries to extend an inherited Enum class. "
+        "Doing so will raise a TypeError at runtime.",
     ),
     "R0202": (
         "Consider using a decorator instead of calling classmethod",
@@ -665,17 +711,20 @@ MSGS = {  # pylint: disable=consider-using-namedtuple-or-dataclass
 }
 
 
-def _scope_default():
-    return collections.defaultdict(list)
+def _scope_default() -> defaultdict[str, list[_AccessNodes]]:
+    # It's impossible to nest defaultdicts so we must use a function
+    return defaultdict(list)
 
 
 class ScopeAccessMap:
     """Store the accessed variables per scope."""
 
     def __init__(self):
-        self._scopes = collections.defaultdict(_scope_default)
+        self._scopes: defaultdict[
+            nodes.ClassDef, defaultdict[str, list[_AccessNodes]]
+        ] = defaultdict(_scope_default)
 
-    def set_accessed(self, node):
+    def set_accessed(self, node: _AccessNodes) -> None:
         """Set the given node as accessed."""
 
         frame = node_frame_class(node)
@@ -684,13 +733,15 @@ class ScopeAccessMap:
             return
         self._scopes[frame][node.attrname].append(node)
 
-    def accessed(self, scope):
+    def accessed(self, scope: nodes.ClassDef) -> dict[str, list[_AccessNodes]]:
         """Get the accessed variables for the given scope."""
         return self._scopes.get(scope, {})
 
 
 class ClassChecker(BaseChecker):
-    """Checks for :
+    """Checker for class nodes.
+
+    Checks for :
     * methods without self as first argument
     * overridden methods signature
     * access only to existent members via self
@@ -698,13 +749,10 @@ class ClassChecker(BaseChecker):
     * unreachable code
     """
 
-    __implements__ = (IAstroidChecker,)
-
     # configuration section name
     name = "classes"
     # messages
     msgs = MSGS
-    priority = -2
     # configuration options
     options = (
         (
@@ -767,28 +815,22 @@ a metaclass class method.",
         ),
     )
 
-    def __init__(self, linter=None):
+    def __init__(self, linter: PyLinter) -> None:
         super().__init__(linter)
         self._accessed = ScopeAccessMap()
-        self._first_attrs = []
-        self._meth_could_be_func = None
+        self._first_attrs: list[str | None] = []
 
     def open(self) -> None:
-        self._mixin_class_rgx = get_global_option(self, "mixin-class-rgx")
-        py_version = get_global_option(self, "py-version")
+        self._mixin_class_rgx = self.linter.config.mixin_class_rgx
+        py_version = self.linter.config.py_version
         self._py38_plus = py_version >= (3, 8)
 
-    @astroid.decorators.cachedproperty
+    @cached_property
     def _dummy_rgx(self):
-        return get_global_option(self, "dummy-variables-rgx", default=None)
+        return self.linter.config.dummy_variables_rgx
 
-    @astroid.decorators.cachedproperty
-    def _ignore_mixin(self):
-        return get_global_option(self, "ignore-mixin-members", default=True)
-
-    @check_messages(
+    @only_required_for_messages(
         "abstract-method",
-        "no-init",
         "invalid-slots",
         "single-string-used-for-slots",
         "invalid-slots-object",
@@ -798,22 +840,18 @@ a metaclass class method.",
         "inconsistent-mro",
         "duplicate-bases",
         "redefined-slots-in-subclass",
+        "invalid-enum-extension",
+        "subclassed-final-class",
     )
     def visit_classdef(self, node: nodes.ClassDef) -> None:
         """Init visit variable _accessed."""
         self._check_bases_classes(node)
-        # if not an exception or a metaclass
-        if node.type == "class" and has_known_bases(node):
-            try:
-                node.local_attr("__init__")
-            except astroid.NotFoundError:
-                self.add_message("no-init", args=node, node=node)
         self._check_slots(node)
         self._check_proper_bases(node)
         self._check_typing_final(node)
         self._check_consistent_mro(node)
 
-    def _check_consistent_mro(self, node):
+    def _check_consistent_mro(self, node: nodes.ClassDef) -> None:
         """Detect that a class has a consistent mro or duplicate bases."""
         try:
             node.mro()
@@ -825,7 +863,7 @@ a metaclass class method.",
             # Old style class, there's no mro so don't do anything.
             pass
 
-    def _check_proper_bases(self, node):
+    def _check_proper_bases(self, node: nodes.ClassDef) -> None:
         """Detect that a class inherits something which is not
         a class or a type.
         """
@@ -843,13 +881,27 @@ a metaclass class method.",
             ):
                 self.add_message("inherit-non-class", args=base.as_string(), node=node)
 
+            if isinstance(ancestor, nodes.ClassDef) and ancestor.is_subtype_of(
+                "enum.Enum"
+            ):
+                members = ancestor.getattr("__members__")
+                if members and isinstance(members[0], nodes.Dict) and members[0].items:
+                    self.add_message(
+                        "invalid-enum-extension",
+                        args=ancestor.name,
+                        node=node,
+                        confidence=INFERENCE,
+                    )
+
             if ancestor.name == object.__name__:
                 self.add_message(
                     "useless-object-inheritance", args=node.name, node=node
                 )
 
     def _check_typing_final(self, node: nodes.ClassDef) -> None:
-        """Detect that a class does not subclass a class decorated with `typing.final`."""
+        """Detect that a class does not subclass a class decorated with
+        `typing.final`.
+        """
         if not self._py38_plus:
             return
         for base in node.bases:
@@ -867,9 +919,14 @@ a metaclass class method.",
                     node=node,
                 )
 
-    @check_messages("unused-private-member", "attribute-defined-outside-init")
+    @only_required_for_messages(
+        "unused-private-member",
+        "attribute-defined-outside-init",
+        "access-member-before-definition",
+    )
     def leave_classdef(self, node: nodes.ClassDef) -> None:
-        """Close a class node:
+        """Checker for Class nodes.
+
         check that instance attributes are defined in __init__ and check
         access to existent members
         """
@@ -889,29 +946,35 @@ a metaclass class method.",
                     n.name for n in parent_scope.nodes_of_class(nodes.Name)
                 ):
                     continue
-            for attribute in node.nodes_of_class(nodes.Attribute):
-                if (
-                    attribute.attrname != function_def.name
-                    or attribute.scope() == function_def  # We ignore recursive calls
-                ):
-                    continue
-                if isinstance(attribute.expr, nodes.Name) and attribute.expr.name in (
-                    "self",
-                    "cls",
-                    node.name,
-                ):
-                    # self.__attrname
-                    # cls.__attrname
-                    # node_name.__attrname
+            for child in node.nodes_of_class((nodes.Name, nodes.Attribute)):
+                # Check for cases where the functions are used as a variable instead of as a method call
+                if isinstance(child, nodes.Name) and child.name == function_def.name:
                     break
-                if isinstance(attribute.expr, nodes.Call):
-                    # type(self).__attrname
-                    inferred = safe_infer(attribute.expr)
+                if isinstance(child, nodes.Attribute):
+                    # Ignore recursive calls
                     if (
-                        isinstance(inferred, nodes.ClassDef)
-                        and inferred.name == node.name
+                        child.attrname != function_def.name
+                        or child.scope() == function_def
                     ):
+                        continue
+
+                    # Check self.__attrname, cls.__attrname, node_name.__attrname
+                    if isinstance(child.expr, nodes.Name) and child.expr.name in {
+                        "self",
+                        "cls",
+                        node.name,
+                    }:
+
                         break
+
+                    # Check type(self).__attrname
+                    if isinstance(child.expr, nodes.Call):
+                        inferred = safe_infer(child.expr)
+                        if (
+                            isinstance(inferred, nodes.ClassDef)
+                            and inferred.name == node.name
+                        ):
+                            break
             else:
                 name_stack = []
                 curr = parent_scope
@@ -961,7 +1024,7 @@ a metaclass class method.",
             # Logic for checking false positive when using __new__,
             # Get the returned object names of the __new__ magic function
             # Then check if the attribute was consumed in other instance methods
-            acceptable_obj_names: List[str] = ["self"]
+            acceptable_obj_names: list[str] = ["self"]
             scope = assign_attr.scope()
             if isinstance(scope, nodes.FunctionDef) and scope.name == "__new__":
                 acceptable_obj_names.extend(
@@ -976,7 +1039,7 @@ a metaclass class method.",
                 if attribute.attrname != assign_attr.attrname:
                     continue
 
-                if self._is_type_self_call(attribute.expr):
+                if not isinstance(attribute.expr, nodes.Name):
                     continue
 
                 if assign_attr.expr.name in {
@@ -1004,7 +1067,11 @@ a metaclass class method.",
 
     def _check_attribute_defined_outside_init(self, cnode: nodes.ClassDef) -> None:
         # check access to existent members on non metaclass classes
-        if self._ignore_mixin and self._mixin_class_rgx.match(cnode.name):
+        if (
+            "attribute-defined-outside-init"
+            in self.linter.config.ignored_checks_for_mixins
+            and self._mixin_class_rgx.match(cnode.name)
+        ):
             # We are in a mixin class. No need to try to figure out if
             # something is missing, since it is most likely that it will
             # miss.
@@ -1016,7 +1083,7 @@ a metaclass class method.",
         # checks attributes are defined in an allowed method such as __init__
         if not self.linter.is_message_enabled("attribute-defined-outside-init"):
             return
-        defining_methods = self.config.defining_attr_methods
+        defining_methods = self.linter.config.defining_attr_methods
         current_module = cnode.root()
         for attr, nodes_lst in cnode.instance_attrs.items():
             # Exclude `__dict__` as it is already defined.
@@ -1084,7 +1151,6 @@ a metaclass class method.",
 
         # 'is_method()' is called and makes sure that this is a 'nodes.ClassDef'
         klass = node.parent.frame(future=True)  # type: nodes.ClassDef
-        self._meth_could_be_func = True
         # check first argument is self if this is actually a method
         self._check_first_arg_for_type(node, klass.type == "metaclass")
         if node.name == "__init__":
@@ -1170,7 +1236,7 @@ a metaclass class method.",
 
     visit_asyncfunctiondef = visit_functiondef
 
-    def _check_useless_super_delegation(self, function):
+    def _check_useless_super_delegation(self, function: nodes.FunctionDef) -> None:
         """Check if the given function node is an useless method override.
 
         We consider it *useless* if it uses the super() builtin, but having
@@ -1181,55 +1247,17 @@ a metaclass class method.",
         this method, then the method could be removed altogether, by letting
         other implementation to take precedence.
         """
-
-        if (
-            not function.is_method()
-            # With decorators is a change of use
-            or function.decorators
-        ):
+        if not _is_trivial_super_delegation(function):
             return
 
-        body = function.body
-        if len(body) != 1:
-            # Multiple statements, which means this overridden method
-            # could do multiple things we are not aware of.
-            return
+        call: nodes.Call = function.body[0].value
 
-        statement = body[0]
-        if not isinstance(statement, (nodes.Expr, nodes.Return)):
-            # Doing something else than what we are interested into.
-            return
-
-        call = statement.value
-        if (
-            not isinstance(call, nodes.Call)
-            # Not a super() attribute access.
-            or not isinstance(call.func, nodes.Attribute)
-        ):
-            return
-
-        # Should be a super call.
-        try:
-            super_call = next(call.func.expr.infer())
-        except astroid.InferenceError:
-            return
-        else:
-            if not isinstance(super_call, astroid.objects.Super):
-                return
-
-        # The name should be the same.
-        if call.func.attrname != function.name:
-            return
-
-        # Should be a super call with the MRO pointer being the
-        # current class and the type being the current instance.
-        current_scope = function.parent.scope()
-        if (
-            super_call.mro_pointer != current_scope
-            or not isinstance(super_call.type, astroid.Instance)
-            or super_call.type.name != current_scope.name
-        ):
-            return
+        # Classes that override __eq__ should also override
+        # __hash__, even a trivial override is meaningful
+        if function.name == "__hash__":
+            for other_method in function.parent.mymethods():
+                if other_method.name == "__eq__":
+                    return
 
         # Check values of default args
         klass = function.parent.frame(future=True)
@@ -1259,6 +1287,12 @@ a metaclass class method.",
         args = _signature_from_call(call)
 
         if meth_node is not None:
+            # Detect if the super method uses varargs and the function doesn't or makes some of those explicit
+            if meth_node.args.vararg and (
+                not function.args.vararg
+                or len(function.args.args) > len(meth_node.args.args)
+            ):
+                return
 
             def form_annotations(arguments):
                 annotations = chain(
@@ -1272,9 +1306,20 @@ a metaclass class method.",
                 if called_annotations != overridden_annotations:
                     return
 
+            if (
+                function.returns is not None
+                and meth_node.returns is not None
+                and meth_node.returns.as_string() != function.returns.as_string()
+            ):
+                # Override adds typing information to the return type
+                return
+
         if _definition_equivalent_to_call(params, args):
             self.add_message(
-                "useless-super-delegation", node=function, args=(function.name,)
+                "useless-parent-delegation",
+                node=function,
+                args=(function.name,),
+                confidence=INFERENCE,
             )
 
     def _check_property_with_parameters(self, node):
@@ -1368,17 +1413,18 @@ a metaclass class method.",
         self,
         node: nodes.ClassDef,
         slots_node: nodes.NodeNG,
-        slots_list: List[nodes.NodeNG],
+        slots_list: list[nodes.NodeNG],
     ) -> None:
         """Check if `node` redefines a slot which is defined in an ancestor class."""
-        slots_names: List[str] = []
+        slots_names: list[str] = []
         for slot in slots_list:
             if isinstance(slot, nodes.Const):
                 slots_names.append(slot.value)
             else:
                 inferred_slot = safe_infer(slot)
-                if inferred_slot:
-                    slots_names.append(inferred_slot.value)
+                inferred_slot_value = getattr(inferred_slot, "value", None)
+                if isinstance(inferred_slot_value, str):
+                    slots_names.append(inferred_slot_value)
 
         # Slots of all parent classes
         ancestors_slots_names = {
@@ -1405,12 +1451,18 @@ a metaclass class method.",
                 inferred.value, str
             ):
                 self.add_message(
-                    "invalid-slots-object", args=inferred.as_string(), node=elt
+                    "invalid-slots-object",
+                    args=elt.as_string(),
+                    node=elt,
+                    confidence=INFERENCE,
                 )
                 continue
             if not inferred.value:
                 self.add_message(
-                    "invalid-slots-object", args=inferred.as_string(), node=elt
+                    "invalid-slots-object",
+                    args=elt.as_string(),
+                    node=elt,
+                    confidence=INFERENCE,
                 )
 
             # Check if we have a conflict with a class variable.
@@ -1434,32 +1486,19 @@ a metaclass class method.",
         if node.is_method():
             if node.args.args is not None:
                 self._first_attrs.pop()
-            if not self.linter.is_message_enabled("no-self-use"):
-                return
-            class_node = node.parent.frame(future=True)
-            if (
-                self._meth_could_be_func
-                and node.type == "method"
-                and node.name not in PYMETHODS
-                and not (
-                    node.is_abstract()
-                    or overrides_a_method(class_node, node.name)
-                    or decorated_with_property(node)
-                    or _has_bare_super_call(node)
-                    or is_protocol_class(class_node)
-                    or is_overload_stub(node)
-                )
-            ):
-                self.add_message("no-self-use", node=node)
 
     leave_asyncfunctiondef = leave_functiondef
 
     def visit_attribute(self, node: nodes.Attribute) -> None:
         """Check if the getattr is an access to a class member
-        if so, register it. Also check for access to protected
+        if so, register it.
+
+        Also check for access to protected
         class member from outside its class (but ignore __special__
         methods)
         """
+        self._check_super_without_brackets(node)
+
         # Check self
         if self._uses_mandatory_method_param(node):
             self._accessed.set_accessed(node)
@@ -1469,7 +1508,24 @@ a metaclass class method.",
 
         self._check_protected_attribute_access(node)
 
-    @check_messages("assigning-non-slot", "invalid-class-object")
+    def _check_super_without_brackets(self, node: nodes.Attribute) -> None:
+        """Check if there is a function call on a super call without brackets."""
+        # Check if attribute call is in frame definition in class definition
+        frame = node.frame()
+        if not isinstance(frame, nodes.FunctionDef):
+            return
+        if not isinstance(frame.parent.frame(), nodes.ClassDef):
+            return
+        if not isinstance(node.parent, nodes.Call):
+            return
+        if not isinstance(node.expr, nodes.Name):
+            return
+        if node.expr.name == "super":
+            self.add_message("super-without-brackets", node=node.expr, confidence=HIGH)
+
+    @only_required_for_messages(
+        "assigning-non-slot", "invalid-class-object", "access-member-before-definition"
+    )
     def visit_assignattr(self, node: nodes.AssignAttr) -> None:
         if isinstance(
             node.assign_type(), nodes.AugAssign
@@ -1482,8 +1538,12 @@ a metaclass class method.",
         if not node.attrname == "__class__":
             return
         inferred = safe_infer(node.parent.value)
-        if isinstance(inferred, nodes.ClassDef) or inferred is astroid.Uninferable:
-            # If is uninferrable, we allow it to prevent false positives
+        if (
+            isinstance(inferred, nodes.ClassDef)
+            or inferred is astroid.Uninferable
+            or inferred is None
+        ):
+            # If is uninferable, we allow it to prevent false positives
             return
         self.add_message("invalid-class-object", node=node)
 
@@ -1552,7 +1612,7 @@ a metaclass class method.",
                     return
                 self.add_message("assigning-non-slot", args=(node.attrname,), node=node)
 
-    @check_messages(
+    @only_required_for_messages(
         "protected-access", "no-classmethod-decorator", "no-staticmethod-decorator"
     )
     def visit_assign(self, assign_node: nodes.Assign) -> None:
@@ -1606,7 +1666,9 @@ a metaclass class method.",
 
     def _check_protected_attribute_access(self, node: nodes.Attribute):
         """Given an attribute access node (set or get), check if attribute
-        access is legitimate. Call _check_first_attr with node before calling
+        access is legitimate.
+
+        Call _check_first_attr with node before calling
         this method. Valid cases are:
         * self._attr in a method or cls._attr in a classmethod. Checked by
         _check_first_attr.
@@ -1618,7 +1680,7 @@ a metaclass class method.",
 
         if (
             is_attr_protected(attrname)
-            and attrname not in self.config.exclude_protected
+            and attrname not in self.linter.config.exclude_protected
         ):
 
             klass = node_frame_class(node)
@@ -1689,7 +1751,7 @@ a metaclass class method.",
 
                 licit_protected_member = not attrname.startswith("__")
                 if (
-                    not self.config.check_protected_access_in_special_methods
+                    not self.linter.config.check_protected_access_in_special_methods
                     and licit_protected_member
                     and self._is_called_inside_special_method(node)
                 ):
@@ -1722,7 +1784,9 @@ a metaclass class method.",
 
     @staticmethod
     def _is_inferred_instance(expr, klass):
-        """Check if the inferred value of the given *expr* is an instance of *klass*."""
+        """Check if the inferred value of the given *expr* is an instance of
+        *klass*.
+        """
 
         inferred = safe_infer(expr)
         if not isinstance(inferred, astroid.Instance):
@@ -1731,8 +1795,9 @@ a metaclass class method.",
         return inferred._proxied is klass
 
     @staticmethod
-    def _is_class_attribute(name, klass):
-        """Check if the given attribute *name* is a class or instance member of the given *klass*.
+    def _is_class_attribute(name: str, klass: nodes.ClassDef) -> bool:
+        """Check if the given attribute *name* is a class or instance member of the
+        given *klass*.
 
         Returns ``True`` if the name is a property in the given klass,
         ``False`` otherwise.
@@ -1750,16 +1815,9 @@ a metaclass class method.",
         except astroid.NotFoundError:
             return False
 
-    def visit_name(self, node: nodes.Name) -> None:
-        """Check if the name handle an access to a class member
-        if so, register it
-        """
-        if self._first_attrs and (
-            node.name == self._first_attrs[-1] or not self._first_attrs[-1]
-        ):
-            self._meth_could_be_func = False
-
-    def _check_accessed_members(self, node, accessed):
+    def _check_accessed_members(
+        self, node: nodes.ClassDef, accessed: dict[str, list[_AccessNodes]]
+    ) -> None:
         """Check that accessed members are defined."""
         excs = ("AttributeError", "Exception", "BaseException")
         for attr, nodes_lst in accessed.items():
@@ -1819,7 +1877,7 @@ a metaclass class method.",
                                 args=(attr, lno),
                             )
 
-    def _check_first_arg_for_type(self, node, metaclass=0):
+    def _check_first_arg_for_type(self, node: nodes.FunctionDef, metaclass: bool):
         """Check the name of first argument, expect:.
 
         * 'self' for a regular method
@@ -1844,8 +1902,8 @@ a metaclass class method.",
         if node.type == "staticmethod":
             if (
                 first_arg == "self"
-                or first_arg in self.config.valid_classmethod_first_arg
-                or first_arg in self.config.valid_metaclass_classmethod_first_arg
+                or first_arg in self.linter.config.valid_classmethod_first_arg
+                or first_arg in self.linter.config.valid_metaclass_classmethod_first_arg
             ):
                 self.add_message("bad-staticmethod-argument", args=first, node=node)
                 return
@@ -1859,7 +1917,7 @@ a metaclass class method.",
             if node.type == "classmethod":
                 self._check_first_arg_config(
                     first,
-                    self.config.valid_metaclass_classmethod_first_arg,
+                    self.linter.config.valid_metaclass_classmethod_first_arg,
                     node,
                     "bad-mcs-classmethod-argument",
                     node.name,
@@ -1868,7 +1926,7 @@ a metaclass class method.",
             else:
                 self._check_first_arg_config(
                     first,
-                    self.config.valid_classmethod_first_arg,
+                    self.linter.config.valid_classmethod_first_arg,
                     node,
                     "bad-mcs-method-argument",
                     node.name,
@@ -1877,7 +1935,7 @@ a metaclass class method.",
         elif node.type == "classmethod" or node.name == "__class_getitem__":
             self._check_first_arg_config(
                 first,
-                self.config.valid_classmethod_first_arg,
+                self.linter.config.valid_classmethod_first_arg,
                 node,
                 "bad-classmethod-argument",
                 node.name,
@@ -1886,7 +1944,14 @@ a metaclass class method.",
         elif first != "self":
             self.add_message("no-self-argument", node=node)
 
-    def _check_first_arg_config(self, first, config, node, message, method_name):
+    def _check_first_arg_config(
+        self,
+        first: str | None,
+        config: Sequence[str],
+        node: nodes.FunctionDef,
+        message: str,
+        method_name: str,
+    ) -> None:
         if first not in config:
             if len(config) == 1:
                 valid = repr(config[0])
@@ -1895,12 +1960,12 @@ a metaclass class method.",
                 valid = f"{valid} or {config[-1]!r}"
             self.add_message(message, args=(method_name, valid), node=node)
 
-    def _check_bases_classes(self, node):
+    def _check_bases_classes(self, node: nodes.ClassDef) -> None:
         """Check that the given class node implements abstract methods from
-        base classes
+        base classes.
         """
 
-        def is_abstract(method):
+        def is_abstract(method: nodes.FunctionDef) -> bool:
             return method.is_abstract(pass_is_abstract=False)
 
         # check if this class abstract
@@ -1924,7 +1989,7 @@ a metaclass class method.",
 
     def _check_init(self, node: nodes.FunctionDef, klass_node: nodes.ClassDef) -> None:
         """Check that the __init__ method call super or ancestors'__init__
-        method (unless it is used for type hinting with `typing.overload`)
+        method (unless it is used for type hinting with `typing.overload`).
         """
         if not self.linter.is_message_enabled(
             "super-init-not-called"
@@ -1932,7 +1997,7 @@ a metaclass class method.",
             return
         to_call = _ancestors_to_call(klass_node)
         not_called_yet = dict(to_call)
-        parents_with_called_inits: Set[bases.UnboundMethod] = set()
+        parents_with_called_inits: set[bases.UnboundMethod] = set()
         for stmt in node.nodes_of_class(nodes.Call):
             expr = stmt.func
             if not isinstance(expr, nodes.Attribute) or expr.attrname != "__init__":
@@ -1987,11 +2052,12 @@ a metaclass class method.",
 
             # Return if any of the klass' first-order bases is protocol
             for base in klass.bases:
-                # We don't need to catch InferenceError here as _ancestors_to_call
-                # already does this for us.
-                for inf_base in base.infer():
-                    if inf_base.qname() in utils.TYPING_PROTOCOLS:
-                        return
+                try:
+                    for inf_base in base.infer():
+                        if inf_base.qname() in utils.TYPING_PROTOCOLS:
+                            return
+                except astroid.InferenceError:
+                    continue
 
             if decorated_with(node, ["typing.overload"]):
                 continue
@@ -2005,7 +2071,13 @@ a metaclass class method.",
                 confidence=INFERENCE,
             )
 
-    def _check_signature(self, method1, refmethod, class_type, cls):
+    def _check_signature(
+        self,
+        method1: nodes.FunctionDef,
+        refmethod: nodes.FunctionDef,
+        class_type: str,
+        cls: nodes.ClassDef,
+    ) -> None:
         """Check that the signature of the two given methods match."""
         if not (
             isinstance(method1, nodes.FunctionDef)
@@ -2083,7 +2155,9 @@ a metaclass class method.",
                 "signature-differs", args=(class_type, method1.name), node=method1
             )
 
-    def _uses_mandatory_method_param(self, node):
+    def _uses_mandatory_method_param(
+        self, node: nodes.Attribute | nodes.Assign | nodes.AssignAttr
+    ) -> bool:
         """Check that attribute lookup name use first attribute variable name.
 
         Name is `self` for method, `cls` for classmethod and `mcs` for metaclass.
@@ -2094,6 +2168,7 @@ a metaclass class method.",
         """Check if nodes.Name corresponds to first attribute variable name.
 
         Name is `self` for method, `cls` for classmethod and `mcs` for metaclass.
+        Static methods return False.
         """
         if self._first_attrs:
             first_attr = self._first_attrs[-1]
@@ -2104,6 +2179,8 @@ a metaclass class method.",
             )
             if closest_func is None:
                 return False
+            if not closest_func.is_bound():
+                return False
             if not closest_func.args.args:
                 return False
             first_attr = closest_func.args.args[0].name
@@ -2111,12 +2188,12 @@ a metaclass class method.",
 
 
 def _ancestors_to_call(
-    klass_node: nodes.ClassDef, method="__init__"
-) -> Dict[nodes.ClassDef, bases.UnboundMethod]:
+    klass_node: nodes.ClassDef, method: str = "__init__"
+) -> dict[nodes.ClassDef, bases.UnboundMethod]:
     """Return a dictionary where keys are the list of base classes providing
-    the queried method, and so that should/may be called from the method node
+    the queried method, and so that should/may be called from the method node.
     """
-    to_call: Dict[nodes.ClassDef, bases.UnboundMethod] = {}
+    to_call: dict[nodes.ClassDef, bases.UnboundMethod] = {}
     for base_node in klass_node.ancestors(recurs=False):
         try:
             to_call[base_node] = next(base_node.igetattr(method))

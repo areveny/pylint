@@ -1,8 +1,11 @@
 # Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
+# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
+
+from __future__ import annotations
 
 import sys
-from typing import Dict, List, Optional, Set, cast
+from typing import cast
 
 from pylint.typing import MessageTypesFullName
 
@@ -26,6 +29,7 @@ class BadNames(TypedDict):
     method: int
     module: int
     variable: int
+    typevar: int
 
 
 class CodeTypeCount(TypedDict):
@@ -81,14 +85,14 @@ class LinterStats:
 
     def __init__(
         self,
-        bad_names: Optional[BadNames] = None,
-        by_module: Optional[Dict[str, ModuleStats]] = None,
-        by_msg: Optional[Dict[str, int]] = None,
-        code_type_count: Optional[CodeTypeCount] = None,
-        dependencies: Optional[Dict[str, Set[str]]] = None,
-        duplicated_lines: Optional[DuplicatedLines] = None,
-        node_count: Optional[NodeCount] = None,
-        undocumented: Optional[UndocumentedNodes] = None,
+        bad_names: BadNames | None = None,
+        by_module: dict[str, ModuleStats] | None = None,
+        by_msg: dict[str, int] | None = None,
+        code_type_count: CodeTypeCount | None = None,
+        dependencies: dict[str, set[str]] | None = None,
+        duplicated_lines: DuplicatedLines | None = None,
+        node_count: NodeCount | None = None,
+        undocumented: UndocumentedNodes | None = None,
     ) -> None:
         self.bad_names = bad_names or BadNames(
             argument=0,
@@ -102,14 +106,15 @@ class LinterStats:
             method=0,
             module=0,
             variable=0,
+            typevar=0,
         )
-        self.by_module: Dict[str, ModuleStats] = by_module or {}
-        self.by_msg: Dict[str, int] = by_msg or {}
+        self.by_module: dict[str, ModuleStats] = by_module or {}
+        self.by_msg: dict[str, int] = by_msg or {}
         self.code_type_count = code_type_count or CodeTypeCount(
             code=0, comment=0, docstring=0, empty=0, total=0
         )
 
-        self.dependencies: Dict[str, Set[str]] = dependencies or {}
+        self.dependencies: dict[str, set[str]] = dependencies or {}
         self.duplicated_lines = duplicated_lines or DuplicatedLines(
             nb_duplicated_lines=0, percent_duplicated_lines=0.0
         )
@@ -132,6 +137,9 @@ class LinterStats:
         self.nb_duplicated_lines = 0
         self.percent_duplicated_lines = 0.0
 
+    def __repr__(self) -> str:
+        return str(self)
+
     def __str__(self) -> str:
         return f"""{self.bad_names}
         {sorted(self.by_module.items())}
@@ -152,7 +160,9 @@ class LinterStats:
         {self.percent_duplicated_lines}"""
 
     def init_single_module(self, module_name: str) -> None:
-        """Use through PyLinter.set_current_module so PyLinter.current_name is consistent."""
+        """Use through PyLinter.set_current_module so PyLinter.current_name is
+        consistent.
+        """
         self.by_module[module_name] = ModuleStats(
             convention=0, error=0, fatal=0, info=0, refactor=0, statement=0, warning=0
         )
@@ -171,6 +181,7 @@ class LinterStats:
             "method",
             "module",
             "variable",
+            "typevar",
         ],
     ) -> int:
         """Get a bad names node count."""
@@ -192,6 +203,7 @@ class LinterStats:
             "method",
             "module",
             "variable",
+            "typevar",
         }:
             raise ValueError("Node type not part of the bad_names stat")
 
@@ -208,6 +220,7 @@ class LinterStats:
                 "method",
                 "module",
                 "variable",
+                "typevar",
             ],
             node_name,
         )
@@ -230,6 +243,7 @@ class LinterStats:
             method=0,
             module=0,
             variable=0,
+            typevar=0,
         )
 
     def get_code_count(
@@ -289,7 +303,9 @@ class LinterStats:
     def increase_single_module_message_count(
         self, modname: str, type_name: MessageTypesFullName, increase: int
     ) -> None:
-        """Increase the message type count of an individual message type of a module."""
+        """Increase the message type count of an individual message type of a
+        module.
+        """
         self.by_module[modname][type_name] += increase
 
     def reset_message_count(self) -> None:
@@ -302,8 +318,10 @@ class LinterStats:
         self.warning = 0
 
 
-def merge_stats(stats: List[LinterStats]):
-    """Used to merge multiple stats objects into a new one when pylint is run in parallel mode."""
+def merge_stats(stats: list[LinterStats]) -> LinterStats:
+    """Used to merge multiple stats objects into a new one when pylint is run in
+    parallel mode.
+    """
     merged = LinterStats()
     for stat in stats:
         merged.bad_names["argument"] += stat.bad_names["argument"]
@@ -317,6 +335,7 @@ def merge_stats(stats: List[LinterStats]):
         merged.bad_names["method"] += stat.bad_names["method"]
         merged.bad_names["module"] += stat.bad_names["module"]
         merged.bad_names["variable"] += stat.bad_names["variable"]
+        merged.bad_names["typevar"] += stat.bad_names["typevar"]
 
         for mod_key, mod_value in stat.by_module.items():
             merged.by_module[mod_key] = mod_value
