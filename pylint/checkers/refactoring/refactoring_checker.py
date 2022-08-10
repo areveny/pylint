@@ -339,7 +339,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "more idiomatic, although sometimes a bit slower",
         ),
         "R1716": (
-            "Simplify chained comparison between the operands",
+            "Simplify chained comparison between the operands: %s",
             "chained-comparison",
             "This message is emitted when pylint encounters boolean operation like "
             '"a < b and b < c", suggesting instead to refactor it to "a < b < c"',
@@ -467,6 +467,17 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             "value by index lookup. "
             "The value can be accessed directly instead.",
         ),
+        "R1737": (
+            "Simplify cycle to ==",
+            "comparison-all-equal",
+            "Emitted when items in a boolean condition are all <= or >="
+            "This is equivalent to asking if they all equal.",
+        ),
+        "R1738": (
+            "This comparison always evalutes to False",
+            "impossible-comparison",
+            "Emitted when there a comparison that is always False."
+        )
     }
     options = (
         (
@@ -1272,17 +1283,27 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         )
 
     def _check_comparisons(self, node: nodes.BoolOp):
+        graph_info = self._get_graph_from_comparison_nodes(node)
+        if not graph_info:
+            return
         graph_dict, symbol_dict, indegree_dict, frequency_dict = self._get_graph_from_comparison_nodes(node)
         cycles = get_cycles(graph_dict)
         if cycles:
-            self._handle_cycles(symbol_dict, cycles)
+            self._handle_cycles(node, symbol_dict, cycles)
             return
 
         paths = get_paths(graph_dict, indegree_dict, frequency_dict)
         print(node.as_string())
-        print(paths)
+
         if len(paths) < len(node.values):
-            self.add_message('chained-comparison', node=node)
+            suggestions = list()
+            for path in paths:
+                cur_statement = str(path[0])
+                for i in range(len(path) - 1):
+                    cur_statement += " " + symbol_dict[path[i], path[i+1]] + " " + str(path[i+1])
+                suggestions.append(cur_statement)
+                args = " and ".join(suggestions)
+            self.add_message('chained-comparison', node=node, args=(args, ))
 
     def _get_graph_from_comparison_nodes(self, node: nodes.BoolOp):
         if node.op != 'and' or len(node.values) < 2:
@@ -1295,6 +1316,8 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         const_values: list[int] = []
 
         for statement in node.values:
+            if not isinstance(statement, nodes.Compare):
+                return
             ops = list(statement.ops)
             left_statement = statement.left
             while ops:
@@ -1343,7 +1366,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                         if isinstance(adj, str):
                             graph_dict[largest].discard(adj)
 
-        return graph_dict, symbol_dict, indegree_dict, frequency_dict
+        return (graph_dict, symbol_dict, indegree_dict, frequency_dict)
 
     def _get_compare_operand_value(self, node: nodes.Compare, const_values: Optional[set[int]]=None):
         value = None
@@ -1355,14 +1378,14 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         # elif #Walrus
         return value
 
-    def _handle_cycles(self, symbol_dict, cycles):
+    def _handle_cycles(self, node: nodes.BoolOp, symbol_dict, cycles):
         for cycle in cycles:
             all_geq = all(symbol_dict[(cycle[i], cycle[i+1])] == ">=" for (i, _) in enumerate(cycle) if i < len(cycle) - 1)
             all_geq = all_geq and symbol_dict[cycle[-1], cycle[0]] == ">="
             if all_geq:
-                print("Pylint simplify")
+                self.add_message('comparison-all-equal', node=node)
             else:
-                print("Pylint bad cycle")
+                self.add_message('impossible-comparison', node=node)
 
     @staticmethod
     def _apply_boolean_simplification_rules(operator, values):

@@ -263,6 +263,7 @@ def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path
     return (max_symbols_path, max_nodes_path)
 
 def strip_path(path):
+    """Removes redundant constant comparisons at the ends of a path, e.g. simplies {a, 3, 0} to {a, 3}"""
     low = 0
     high = len(path) - 1
     if path and isinstance(path[0], (int, float)):
