@@ -17,7 +17,7 @@ import sys
 import tempfile
 import textwrap
 import warnings
-from collections.abc import Generator, Iterator
+from collections.abc import Iterator
 from copy import copy
 from io import BytesIO, StringIO
 from os.path import abspath, dirname, join
@@ -37,7 +37,12 @@ from pylint.reporters import JSONReporter
 from pylint.reporters.text import BaseReporter, ColorizedTextReporter, TextReporter
 from pylint.testutils._run import _add_rcfile_default_pylintrc
 from pylint.testutils._run import _Run as Run
-from pylint.testutils.utils import _patch_streams, _test_cwd, _test_sys_path
+from pylint.testutils.utils import (
+    _patch_streams,
+    _test_cwd,
+    _test_environ_pythonpath,
+    _test_sys_path,
+)
 from pylint.utils import utils
 
 if sys.version_info >= (3, 11):
@@ -72,7 +77,7 @@ def _configure_lc_ctype(lc_ctype: str) -> Iterator:
 class MultiReporter(BaseReporter):
     def __init__(self, reporters: list[BaseReporter]) -> None:
         # pylint: disable=super-init-not-called
-        # We don't call it because there is an attribute "linter" that is set inside the base class
+        # We don't call it because there is an attribute "linter" that is set inside the base class,
         # and we have another setter here using yet undefined attribute.
         # I don't think fixing the init order in a test class used once is worth it.
         self._reporters = reporters
@@ -564,12 +569,9 @@ class TestRunTC:
                     expected_output=expected,
                 )
 
-    def test_stdin_syntaxerror(self) -> None:
-        expected_output = (
-            "************* Module a\n"
-            "a.py:1:4: E0001: invalid syntax (<unknown>, line 1) (syntax-error)"
-        )
-
+    def test_stdin_syntax_error(self) -> None:
+        expected_output = """************* Module a
+a.py:1:4: E0001: Parsing failed: 'invalid syntax (<unknown>, line 1)' (syntax-error)"""
         with mock.patch(
             "pylint.lint.pylinter._read_stdin", return_value="for\n"
         ) as mock_stdin:
@@ -742,207 +744,117 @@ class TestRunTC:
 
     @staticmethod
     def test_modify_sys_path() -> None:
-        @contextlib.contextmanager
-        def test_environ_pythonpath(
-            new_pythonpath: str | None,
-        ) -> Generator[None, None, None]:
-            original_pythonpath = os.environ.get("PYTHONPATH")
-            if new_pythonpath:
-                os.environ["PYTHONPATH"] = new_pythonpath
-            elif new_pythonpath is None and original_pythonpath is not None:
-                # If new_pythonpath is None, make sure to delete PYTHONPATH if present
-                del os.environ["PYTHONPATH"]
-            try:
-                yield
-            finally:
-                if original_pythonpath:
-                    os.environ["PYTHONPATH"] = original_pythonpath
-                elif new_pythonpath is not None:
-                    # Only delete PYTHONPATH if new_pythonpath wasn't None
-                    del os.environ["PYTHONPATH"]
-
+        cwd = "/tmp/pytest-of-root/pytest-0/test_do_not_import_files_from_0"
+        default_paths = [
+            "/usr/local/lib/python39.zip",
+            "/usr/local/lib/python3.9",
+            "/usr/local/lib/python3.9/lib-dynload",
+            "/usr/local/lib/python3.9/site-packages",
+        ]
         with _test_sys_path(), patch("os.getcwd") as mock_getcwd:
-            cwd = "/tmp/pytest-of-root/pytest-0/test_do_not_import_files_from_0"
             mock_getcwd.return_value = cwd
-            default_paths = [
-                "/usr/local/lib/python39.zip",
-                "/usr/local/lib/python3.9",
-                "/usr/local/lib/python3.9/lib-dynload",
-                "/usr/local/lib/python3.9/site-packages",
-            ]
-
-            paths = [
-                cwd,
-                *default_paths,
-            ]
+            paths = [cwd, *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath(None):
+            with _test_environ_pythonpath():
                 modify_sys_path()
             assert sys.path == paths[1:]
 
-            paths = [
-                cwd,
-                cwd,
-                *default_paths,
-            ]
+            paths = ["", *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath("."):
+            with _test_environ_pythonpath():
                 modify_sys_path()
             assert sys.path == paths[1:]
 
-            paths = [
-                cwd,
-                "/custom_pythonpath",
-                *default_paths,
-            ]
+            paths = [".", *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath("/custom_pythonpath"):
+            with _test_environ_pythonpath():
                 modify_sys_path()
             assert sys.path == paths[1:]
 
-            paths = [
-                cwd,
-                "/custom_pythonpath",
-                cwd,
-                *default_paths,
-            ]
+            paths = ["/do_not_remove", *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath("/custom_pythonpath:"):
+            with _test_environ_pythonpath():
+                modify_sys_path()
+            assert sys.path == paths
+
+            paths = [cwd, cwd, *default_paths]
+            sys.path = copy(paths)
+            with _test_environ_pythonpath("."):
+                modify_sys_path()
+            assert sys.path == paths[1:]
+
+            paths = [cwd, "/custom_pythonpath", *default_paths]
+            sys.path = copy(paths)
+            with _test_environ_pythonpath("/custom_pythonpath"):
+                modify_sys_path()
+            assert sys.path == paths[1:]
+
+            paths = [cwd, "/custom_pythonpath", cwd, *default_paths]
+            sys.path = copy(paths)
+            with _test_environ_pythonpath("/custom_pythonpath:"):
                 modify_sys_path()
             assert sys.path == [paths[1]] + paths[3:]
 
-            paths = [
-                "",
-                cwd,
-                "/custom_pythonpath",
-                *default_paths,
-            ]
+            paths = ["", cwd, "/custom_pythonpath", *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath(":/custom_pythonpath"):
+            with _test_environ_pythonpath(":/custom_pythonpath"):
                 modify_sys_path()
             assert sys.path == paths[2:]
 
-            paths = [
-                cwd,
-                cwd,
-                "/custom_pythonpath",
-                *default_paths,
-            ]
+            paths = [cwd, cwd, "/custom_pythonpath", *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath(":/custom_pythonpath:"):
+            with _test_environ_pythonpath(":/custom_pythonpath:"):
                 modify_sys_path()
             assert sys.path == paths[2:]
 
-            paths = [
-                cwd,
-                cwd,
-                *default_paths,
-            ]
+            paths = [cwd, cwd, *default_paths]
             sys.path = copy(paths)
-            with test_environ_pythonpath(":."):
+            with _test_environ_pythonpath(":."):
                 modify_sys_path()
             assert sys.path == paths[1:]
             sys.path = copy(paths)
-            with test_environ_pythonpath(f":{cwd}"):
+            with _test_environ_pythonpath(f":{cwd}"):
                 modify_sys_path()
             assert sys.path == paths[1:]
 
             sys.path = copy(paths)
-            with test_environ_pythonpath(".:"):
+            with _test_environ_pythonpath(".:"):
                 modify_sys_path()
             assert sys.path == paths[1:]
             sys.path = copy(paths)
-            with test_environ_pythonpath(f"{cwd}:"):
+            with _test_environ_pythonpath(f"{cwd}:"):
                 modify_sys_path()
             assert sys.path == paths[1:]
 
-            paths = [
-                "",
-                cwd,
-                *default_paths,
-                cwd,
-            ]
+            paths = ["", cwd, *default_paths, cwd]
             sys.path = copy(paths)
-            with test_environ_pythonpath(cwd):
+            with _test_environ_pythonpath(cwd):
                 modify_sys_path()
             assert sys.path == paths[1:]
 
-    @staticmethod
-    def test_do_not_import_files_from_local_directory(tmpdir: LocalPath) -> None:
-        p_astroid = tmpdir / "astroid.py"
-        p_astroid.write("'Docstring'\nimport completely_unknown\n")
-        p_hmac = tmpdir / "hmac.py"
-        p_hmac.write("'Docstring'\nimport completely_unknown\n")
-
-        with tmpdir.as_cwd():
-            subprocess.check_output(
-                [
-                    sys.executable,
-                    "-m",
-                    "pylint",
-                    "astroid.py",
-                    "--disable=import-error,unused-import",
-                ],
-                cwd=str(tmpdir),
-            )
-
-        # Linting this astroid file does not import it
-        with tmpdir.as_cwd():
-            subprocess.check_output(
-                [
-                    sys.executable,
-                    "-m",
-                    "pylint",
-                    "-j2",
-                    "astroid.py",
-                    "--disable=import-error,unused-import",
-                ],
-                cwd=str(tmpdir),
-            )
-
-        # Test with multiple jobs for hmac.py for which we have a
-        # CVE against: https://github.com/PyCQA/pylint/issues/959
-        with tmpdir.as_cwd():
-            subprocess.call(
-                [
-                    sys.executable,
-                    "-m",
-                    "pylint",
-                    "-j2",
-                    "hmac.py",
-                    "--disable=import-error,unused-import",
-                ],
-                cwd=str(tmpdir),
-            )
-
-    @staticmethod
-    def test_do_not_import_files_from_local_directory_with_pythonpath(
-        tmpdir: LocalPath,
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--disable=import-error,unused-import"],
+            # Test with multiple jobs for 'hmac.py' for which we have a
+            # CVE against: https://github.com/PyCQA/pylint/issues/959
+            ["-j2", "--disable=import-error,unused-import"],
+        ],
+    )
+    def test_do_not_import_files_from_local_directory(
+        self, tmpdir: LocalPath, args: list[str]
     ) -> None:
-        p_astroid = tmpdir / "astroid.py"
-        p_astroid.write("'Docstring'\nimport completely_unknown\n")
-        p_hmac = tmpdir / "hmac.py"
-        p_hmac.write("'Docstring'\nimport completely_unknown\n")
-
-        # Appending a colon to PYTHONPATH should not break path stripping
-        # https://github.com/PyCQA/pylint/issues/3636
-        with tmpdir.as_cwd():
-            orig_pythonpath = os.environ.get("PYTHONPATH")
-            os.environ["PYTHONPATH"] = f"{(orig_pythonpath or '').strip(':')}:"
-            subprocess.check_output(
-                [
-                    sys.executable,
-                    "-m",
-                    "pylint",
-                    "astroid.py",
-                    "--disable=import-error,unused-import",
-                ],
-                cwd=str(tmpdir),
-            )
-            if orig_pythonpath:
-                os.environ["PYTHONPATH"] = orig_pythonpath
-            else:
-                del os.environ["PYTHONPATH"]
+        for path in ("astroid.py", "hmac.py"):
+            file_path = tmpdir / path
+            file_path.write("'Docstring'\nimport completely_unknown\n")
+            pylint_call = [sys.executable, "-m", "pylint"] + args + [path]
+            with tmpdir.as_cwd():
+                subprocess.check_output(pylint_call, cwd=str(tmpdir))
+            new_python_path = os.environ.get("PYTHONPATH", "").strip(":")
+            with tmpdir.as_cwd(), _test_environ_pythonpath(f"{new_python_path}:"):
+                # Appending a colon to PYTHONPATH should not break path stripping
+                # https://github.com/PyCQA/pylint/issues/3636
+                subprocess.check_output(pylint_call, cwd=str(tmpdir))
 
     @staticmethod
     def test_import_plugin_from_local_directory_if_pythonpath_cwd(
@@ -950,33 +862,19 @@ class TestRunTC:
     ) -> None:
         p_plugin = tmpdir / "plugin.py"
         p_plugin.write("# Some plugin content")
-
-        with tmpdir.as_cwd():
-            orig_pythonpath = os.environ.get("PYTHONPATH")
-            if sys.platform == "win32":
-                os.environ["PYTHONPATH"] = "."
-            else:
-                os.environ["PYTHONPATH"] = f"{(orig_pythonpath or '').strip(':')}:."
+        if sys.platform == "win32":
+            python_path = "."
+        else:
+            python_path = f"{os.environ.get('PYTHONPATH', '').strip(':')}:."
+        with tmpdir.as_cwd(), _test_environ_pythonpath(python_path):
+            args = [sys.executable, "-m", "pylint", "--load-plugins", "plugin"]
             process = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pylint",
-                    "--load-plugins",
-                    "plugin",
-                ],
-                cwd=str(tmpdir),
-                stderr=subprocess.PIPE,
-                check=False,
+                args, cwd=str(tmpdir), stderr=subprocess.PIPE, check=False
             )
             assert (
                 "AttributeError: module 'plugin' has no attribute 'register'"
                 in process.stderr.decode()
             )
-            if orig_pythonpath:
-                os.environ["PYTHONPATH"] = orig_pythonpath
-            else:
-                del os.environ["PYTHONPATH"]
 
     def test_allow_import_of_files_found_in_modules_during_parallel_check(
         self, tmpdir: LocalPath
@@ -991,25 +889,21 @@ class TestRunTC:
 
         # For multiple jobs we could not find the `spam.py` file.
         with tmpdir.as_cwd():
-            self._runtest(
-                [
-                    "-j2",
-                    "--disable=missing-docstring, missing-final-newline",
-                    "test_directory",
-                ],
-                code=0,
-            )
+            args = [
+                "-j2",
+                "--disable=missing-docstring, missing-final-newline",
+                "test_directory",
+            ]
+            self._runtest(args, code=0)
 
         # A single job should be fine as well
         with tmpdir.as_cwd():
-            self._runtest(
-                [
-                    "-j1",
-                    "--disable=missing-docstring, missing-final-newline",
-                    "test_directory",
-                ],
-                code=0,
-            )
+            args = [
+                "-j1",
+                "--disable=missing-docstring, missing-final-newline",
+                "test_directory",
+            ]
+            self._runtest(args, code=0)
 
     @staticmethod
     def test_can_list_directories_without_dunder_init(tmpdir: LocalPath) -> None:
@@ -1042,7 +936,7 @@ class TestRunTC:
         path = join(
             HERE, "regrtest_data", "regression_missing_init_3564", "subdirectory/"
         )
-        self._test_output([path, "-j2"], expected_output="No such file or directory")
+        self._test_output([path, "-j2"], expected_output="")
 
     def test_output_file_valid_path(self, tmpdir: LocalPath) -> None:
         path = join(HERE, "regrtest_data", "unused_variable.py")
@@ -1079,7 +973,7 @@ class TestRunTC:
         # and errors that are generated they don't affect the exit code.
         self._runtest([path, "--fail-under=-10", "--disable=C"] + args, code=expected)
 
-    def test_one_module_fatal_error(self):
+    def test_one_module_fatal_error(self) -> None:
         """Fatal errors in one of several modules linted still exits non-zero."""
         valid_path = join(HERE, "conftest.py")
         invalid_path = join(HERE, "garbagePath.py")
@@ -1197,106 +1091,56 @@ class TestRunTC:
         the standard max_inferred of 100. We used to crash when this happened.
         """
         with pytest.raises(SystemExit) as ex:
-            Run(
-                [
-                    join(
-                        HERE,
-                        "regrtest_data",
-                        "max_inferable_limit_for_classes",
-                        "main.py",
-                    ),
-                ]
+            path = join(
+                HERE, "regrtest_data", "max_inferable_limit_for_classes", "main.py"
             )
+            Run([path])
         # Error code should not include bit-value 1 for crash
         assert not ex.value.code % 2
 
-    def test_regression_recursive(self):
-        """Tests if error is raised when linter is executed over directory not using --recursive=y"""
-        self._test_output(
-            [join(HERE, "regrtest_data", "directory", "subdirectory"), "--recursive=n"],
-            expected_output="No such file or directory",
-        )
-
-    def test_recursive(self):
+    def test_recursive(self) -> None:
         """Tests if running linter over directory using --recursive=y"""
         self._runtest(
             [join(HERE, "regrtest_data", "directory", "subdirectory"), "--recursive=y"],
             code=0,
         )
 
-    def test_ignore_recursive(self):
+    @pytest.mark.parametrize("ignore_value", ["ignored_subdirectory", "failing.py"])
+    def test_ignore_recursive(self, ignore_value: str) -> None:
         """Tests recursive run of linter ignoring directory using --ignore parameter.
 
         Ignored directory contains files yielding lint errors. If directory is not ignored
         test would fail due these errors.
         """
-        self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore=ignored_subdirectory",
-            ],
-            code=0,
-        )
+        directory = join(HERE, "regrtest_data", "directory")
+        self._runtest([directory, "--recursive=y", f"--ignore={ignore_value}"], code=0)
 
-        self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore=failing.py",
-            ],
-            code=0,
-        )
-
-    def test_ignore_pattern_recursive(self):
+    @pytest.mark.parametrize("ignore_pattern_value", ["ignored_.*", "failing.*"])
+    def test_ignore_pattern_recursive(self, ignore_pattern_value: str) -> None:
         """Tests recursive run of linter ignoring directory using --ignore-parameter parameter.
 
         Ignored directory contains files yielding lint errors. If directory is not ignored
         test would fail due these errors.
         """
+        directory = join(HERE, "regrtest_data", "directory")
         self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore-patterns=ignored_.*",
-            ],
+            [directory, "--recursive=y", f"--ignore-patterns={ignore_pattern_value}"],
             code=0,
         )
 
-        self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore-patterns=failing.*",
-            ],
-            code=0,
-        )
-
-    def test_ignore_path_recursive(self):
+    @pytest.mark.parametrize("ignore_path_value", [".*ignored.*", ".*failing.*"])
+    def test_ignore_path_recursive(self, ignore_path_value: str) -> None:
         """Tests recursive run of linter ignoring directory using --ignore-path parameter.
 
         Ignored directory contains files yielding lint errors. If directory is not ignored
         test would fail due these errors.
         """
+        directory = join(HERE, "regrtest_data", "directory")
         self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore-paths=.*ignored.*",
-            ],
-            code=0,
+            [directory, "--recursive=y", f"--ignore-paths={ignore_path_value}"], code=0
         )
 
-        self._runtest(
-            [
-                join(HERE, "regrtest_data", "directory"),
-                "--recursive=y",
-                "--ignore-paths=.*failing.*",
-            ],
-            code=0,
-        )
-
-    def test_recursive_current_dir(self):
+    def test_recursive_current_dir(self) -> None:
         with _test_sys_path():
             # pytest is including directory HERE/regrtest_data to sys.path which causes
             # astroid to believe that directory is a package.
@@ -1333,22 +1177,6 @@ class TestRunTC:
                     code=0,
                 )
 
-    def test_regression_recursive_current_dir(self):
-        with _test_sys_path():
-            # pytest is including directory HERE/regrtest_data to sys.path which causes
-            # astroid to believe that directory is a package.
-            sys.path = [
-                path
-                for path in sys.path
-                if not os.path.basename(path) == "regrtest_data"
-            ]
-            with _test_cwd():
-                os.chdir(join(HERE, "regrtest_data", "directory"))
-                self._test_output(
-                    ["."],
-                    expected_output="No such file or directory",
-                )
-
 
 class TestCallbackOptions:
     """Test for all callback options we support."""
@@ -1366,7 +1194,9 @@ class TestCallbackOptions:
             (["--long-help"], "Environment variables:"),
         ],
     )
-    def test_output_of_callback_options(command: list[str], expected: str) -> None:
+    def test_output_of_callback_options(
+        command: list[str], expected: str, tmp_path: Path
+    ) -> None:
         """Test whether certain strings are in the output of a callback command."""
         command = _add_rcfile_default_pylintrc(command)
         process = subprocess.run(
@@ -1374,6 +1204,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         assert expected in process.stdout
 
@@ -1386,7 +1217,9 @@ class TestCallbackOptions:
             [["--help-msg"], "--help-msg: expected at least one argumen", True],
         ],
     )
-    def test_help_msg(args: list[str], expected: str, error: bool) -> None:
+    def test_help_msg(
+        args: list[str], expected: str, error: bool, tmp_path: Path
+    ) -> None:
         """Test the --help-msg flag."""
         args = _add_rcfile_default_pylintrc(args)
         process = subprocess.run(
@@ -1394,6 +1227,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         if error:
             result = process.stderr
@@ -1402,7 +1236,7 @@ class TestCallbackOptions:
         assert expected in result
 
     @staticmethod
-    def test_generate_rcfile() -> None:
+    def test_generate_rcfile(tmp_path: Path) -> None:
         """Test the --generate-rcfile flag."""
         args = _add_rcfile_default_pylintrc(["--generate-rcfile"])
         process = subprocess.run(
@@ -1410,6 +1244,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         assert "[MAIN]" in process.stdout
         assert "[MASTER]" not in process.stdout
@@ -1420,6 +1255,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         assert process.stdout == process_two.stdout
 
@@ -1458,7 +1294,7 @@ class TestCallbackOptions:
         assert "suppressed-message" in messages
 
     @staticmethod
-    def test_generate_toml_config() -> None:
+    def test_generate_toml_config(tmp_path: Path) -> None:
         """Test the --generate-toml-config flag."""
         args = _add_rcfile_default_pylintrc(
             [
@@ -1471,6 +1307,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         assert "[tool.pylint.main]" in process.stdout
         assert "[tool.pylint.master]" not in process.stdout
@@ -1483,6 +1320,7 @@ class TestCallbackOptions:
             capture_output=True,
             encoding="utf-8",
             check=False,
+            cwd=str(tmp_path),
         )
         assert process.stdout == process_two.stdout
 

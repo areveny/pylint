@@ -13,13 +13,14 @@ import os
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import astroid
 from astroid import nodes
+from astroid.typing import InferenceResult
 
 from pylint.checkers import BaseChecker, utils
 from pylint.checkers.utils import (
@@ -246,7 +247,9 @@ def _detect_global_scope(node, frame, defframe):
     return frame.lineno < defframe.lineno
 
 
-def _infer_name_module(node, name):
+def _infer_name_module(
+    node: nodes.Import, name: str
+) -> Generator[InferenceResult, None, None]:
     context = astroid.context.InferenceContext()
     context.lookupname = name
     return node.infer(context, asname=False)
@@ -1053,8 +1056,7 @@ class VariablesChecker(BaseChecker):
                 "default": IGNORED_ARGUMENT_NAMES,
                 "type": "regexp",
                 "metavar": "<regexp>",
-                "help": "Argument names that match this expression will be "
-                "ignored. Default to name with leading underscore.",
+                "help": "Argument names that match this expression will be ignored.",
             },
         ),
         (
@@ -1137,9 +1139,24 @@ class VariablesChecker(BaseChecker):
         """Visit class: update consumption analysis variable."""
         self._to_consume.append(NamesConsumer(node, "class"))
 
-    def leave_classdef(self, _: nodes.ClassDef) -> None:
+    def leave_classdef(self, node: nodes.ClassDef) -> None:
         """Leave class: update consumption analysis variable."""
-        # do not check for not used locals here (no sense)
+        # Check for hidden ancestor names
+        # e.g. "six" in: Class X(six.with_metaclass(ABCMeta, object)):
+        for name_node in node.nodes_of_class(nodes.Name):
+            if (
+                isinstance(name_node.parent, nodes.Call)
+                and isinstance(name_node.parent.func, nodes.Attribute)
+                and isinstance(name_node.parent.func.expr, nodes.Name)
+            ):
+                hidden_name_node = name_node.parent.func.expr
+                for consumer in self._to_consume:
+                    if hidden_name_node.name in consumer.to_consume:
+                        consumer.mark_as_consumed(
+                            hidden_name_node.name,
+                            consumer.to_consume[hidden_name_node.name],
+                        )
+                        break
         self._to_consume.pop()
 
     def visit_lambda(self, node: nodes.Lambda) -> None:
