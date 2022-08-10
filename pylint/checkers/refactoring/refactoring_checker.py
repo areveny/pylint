@@ -1296,13 +1296,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         print(node.as_string())
 
         if len(paths) < len(node.values):
-            suggestions = list()
+            suggestions = []
             for path in paths:
                 cur_statement = str(path[0])
                 for i in range(len(path) - 1):
                     cur_statement += " " + symbol_dict[path[i], path[i+1]] + " " + str(path[i+1])
                 suggestions.append(cur_statement)
-                args = " and ".join(suggestions)
+            args = " and ".join(suggestions)
             self.add_message('chained-comparison', node=node, args=(args, ))
 
     def _get_graph_from_comparison_nodes(self, node: nodes.BoolOp):
@@ -1321,13 +1321,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             ops = list(statement.ops)
             left_statement = statement.left
             while ops:
-                if not isinstance(statement, nodes.Compare):
-                    continue
-
                 left = self._get_compare_operand_value(left_statement, const_values)
-                if left is None:
-                    continue
-
                 operator, right_statement = ops.pop(0)
                 right = self._get_compare_operand_value(right_statement, const_values)
                 if right is None:
