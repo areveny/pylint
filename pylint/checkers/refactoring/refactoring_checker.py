@@ -1293,7 +1293,6 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             return
 
         paths = get_paths(graph_dict, indegree_dict, frequency_dict)
-        print(node.as_string())
 
         if len(paths) < len(node.values):
             suggestions = []
@@ -1322,10 +1321,15 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             left_statement = statement.left
             while ops:
                 left = self._get_compare_operand_value(left_statement, const_values)
+                # Pop from ops or else we never advance along the statement
                 operator, right_statement = ops.pop(0)
+                # The operand is not a constant or variable or the operator is not a comparison
+                if operator not in {"<", ">", "==", "<=", ">="} or left is None:
+                    left_statement = right_statement
+                    return
                 right = self._get_compare_operand_value(right_statement, const_values)
                 if right is None:
-                    continue
+                    return
 
                 # Make the graph always point from larger to smaller
                 if operator == "<":
@@ -1343,9 +1347,14 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 indegree_dict[right] += 1
                 frequency_dict[(left, right)] += 1
 
+                # advance onto the next comprison if it exists
                 left_statement = right_statement
 
-        # Link up constant nodes
+        # Nothing was added and we have no recommendations
+        if not graph_dict:
+            return
+
+        # Link up constant nodes, i.e. create synthetic nodes between 1 and 5 such that 5 > 1
         sorted_consts = sorted(const_values)
         while sorted_consts:
             largest = sorted_consts.pop()
@@ -1356,6 +1365,8 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                     frequency_dict[(largest, smaller)] += 1
                     graph_dict[largest].add(smaller)
 
+                    # Remove paths from the larger number to the smaller number's adjacent nodes
+                    # This prevents duplicated paths in the output
                     for adj in graph_dict[smaller]:
                         if isinstance(adj, str):
                             graph_dict[largest].discard(adj)
