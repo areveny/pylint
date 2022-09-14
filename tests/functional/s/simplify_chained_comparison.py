@@ -101,3 +101,15 @@ def test_impossible_comparison():
         pass
     elif a > 100 and c == b and a < 10: # [impossible-comparison]
         pass
+
+def test_all_equal():
+    a = 1
+    b = 2
+    c = 3
+    d = 4
+    if a >= b and b >= a: # [comparison-all-equal]
+        pass
+    elif a >= b and b >= c and c >= a: # [comparison-all-equal]
+        pass
+    elif a <= b and b <= c and c <= d and d <= a: # [comparison-all-equal]
+        pass

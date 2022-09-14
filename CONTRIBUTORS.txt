@@ -13,13 +13,13 @@ Ex-maintainers
 
 Maintainers
 -----------
-
 - Pierre Sassoulas <pierre.sassoulas@gmail.com>
 - Daniël van Noord <13665637+DanielNoord@users.noreply.github.com>
 - Marc Mueller <30130371+cdce8p@users.noreply.github.com>
 - Jacob Walls <jacobtylerwalls@gmail.com>
 - Hippo91 <guillaume.peillex@gmail.com>
 - Matus Valo <matusvalo@users.noreply.github.com>
+- Mark Byrne <31762852+mbyrnepr2@users.noreply.github.com>
 - Andreas Finkler <3929834+DudeNr33@users.noreply.github.com>
 - Łukasz Rogalski <rogalski.91@gmail.com>
 - Ashley Whetter <ashley@awhetter.co.uk>
@@ -51,7 +51,6 @@ contributors:
   * wrong-spelling-in-comment
   * wrong-spelling-in-docstring
   * parallel execution on multiple CPUs
-- Mark Byrne <31762852+mbyrnepr2@users.noreply.github.com>
 - Julthep Nandakwang <julthep@nandakwang.com>
 - Bruno Daniel <bruno.daniel@blue-yonder.com>: check_docs extension.
 - Sushobhit <31987769+sushobhit27@users.noreply.github.com> (sushobhit27)
@@ -118,6 +117,7 @@ contributors:
 - Julien Palard <julien@palard.fr>
 - David Liu <david@cs.toronto.edu> (david-yz-liu)
 - Dan Goldsmith <djgoldsmith@googlemail.com>: support for msg-template in HTML reporter.
+- Buck Evan <buck.2019@gmail.com>
 - Mariatta Wijaya <Mariatta@users.noreply.github.com>
   * Added new check `logging-fstring-interpolation`
   * Documentation typo fixes
@@ -374,6 +374,7 @@ contributors:
 - Ry4an Brase <ry4an-hg@ry4an.org>
 - Ruro <ruro.ruro@ya.ru>
 - Roman Ivanov <me@roivanov.com>
+- Rogdham <contact@rogdham.net>
 - Robert Schweizer <robert_schweizer@gmx.de>
 - Reverb Chu <reverbc@users.noreply.github.com>
 - Renat Galimov <renat2017@gmail.com>
@@ -422,6 +423,7 @@ contributors:
 - Louis Sautier <sautier.louis@gmail.com>
 - Lorena Buciu <46202743+lorena-b@users.noreply.github.com>
 - Logan Miller <14319179+komodo472@users.noreply.github.com>
+- Levi Gruspe <mail.levig@gmail.com>
 - Kári Tristan Helgason <kthelgason@gmail.com>
 - Kurian Benoy <70306694+kurianbenoy-aot@users.noreply.github.com>
 - Krzysztof Czapla <k.czapla68@gmail.com>
@@ -434,6 +436,7 @@ contributors:
 - Kevin Phillips <thefriendlycoder@gmail.com>
 - Kevin Jing Qiu <kevin.jing.qiu@gmail.com>
 - Kayran Schmidt <59456929+yumasheta@users.noreply.github.com>
+- Karthik Nadig <kanadig@microsoft.com>
 - Jürgen Hermann <jh@web.de>
 - Jérome Perrin <perrinjerome@gmail.com>
 - Josselin Feist <josselin@trailofbits.com>
@@ -480,10 +483,12 @@ contributors:
 - Eisuke Kawashima <e-kwsm@users.noreply.github.com>
 - Edward K. Ream <edreamleo@gmail.com>
 - Edgemaster <grand.edgemaster@gmail.com>
+- Drummond Ogilvie <me@daogilvie.com>
 - Drew Risinger <drewrisinger@users.noreply.github.com>
 - Dr. Nick <das-intensity@users.noreply.github.com>
 - Don Jayamanne <don.jayamanne@yahoo.com>
 - Dmytro Kyrychuk <dmytro.kyrychuck@gmail.com>
+- DetachHead <57028336+DetachHead@users.noreply.github.com>
 - Denis Laxalde <denis.laxalde@logilab.fr>
 - David Cain <davidjosephcain@gmail.com>
 - Danny Hermes <daniel.j.hermes@gmail.com>
@@ -498,6 +503,7 @@ contributors:
 - Craig Citro <craigcitro@gmail.com>
 - Clément Pit-Claudel <cpitclaudel@users.noreply.github.com>
 - Christopher Zurcher <zurcher@users.noreply.github.com>
+- Christoph Blessing <33834216+cblessing24@users.noreply.github.com>
 - Carl Crowder <bitbucket@carlcrowder.com>: don't evaluate the value of arguments for 'dangerous-default-value'
 - Carey Metcalfe <carey@cmetcalfe.ca>: demoted `try-except-raise` from error to warning
 - Cameron Olechowski <camsterole@users.noreply.github.com>

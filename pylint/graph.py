@@ -213,8 +213,9 @@ def _get_cycles(
         pass
     path.pop()
 
+
 def get_paths(graph_dict, indegree_dict, frequency_dict):
-    """Gets the minimum number of paths that span all the edges in graph_dict"""
+    """Gets the minimum number of paths that span all the edges in graph_dict."""
     to_visit = {node for node in indegree_dict if indegree_dict[node] == 0}
     paths = set()
     while to_visit:
@@ -223,13 +224,29 @@ def get_paths(graph_dict, indegree_dict, frequency_dict):
 
         # Count the longest possible paths rooted at each node
         for root in to_visit:
-            count_nodes(root, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict)
+            count_nodes(
+                root,
+                graph_dict,
+                symbols_in_longest_path,
+                nodes_in_longest_path,
+                frequency_dict,
+            )
         path = []
 
         # Get the node that can give us the longest path
-        longest_path_item = get_longest_path_item(to_visit, symbols_in_longest_path, nodes_in_longest_path)
+        longest_path_item = get_longest_path_item(
+            to_visit, symbols_in_longest_path, nodes_in_longest_path
+        )
         to_visit.remove(longest_path_item)
-        get_path(path, graph_dict, longest_path_item, to_visit, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
+        get_path(
+            path,
+            graph_dict,
+            longest_path_item,
+            to_visit,
+            frequency_dict,
+            symbols_in_longest_path,
+            nodes_in_longest_path,
+        )
 
         # Decrement the times we can use each node we visited so they are not revisited
         for i, item in enumerate(path):
@@ -242,39 +259,83 @@ def get_paths(graph_dict, indegree_dict, frequency_dict):
 
     return paths
 
-def get_longest_path_item(items, symbols_in_longest_path, nodes_in_longest_path):
-    """Return the item that is at the root of the longest path, prioritizing the number of symbols (a, b, c) and breaking ties with the total number of nodes in the path"""
-    return sorted(items, reverse=True, key=lambda x: (symbols_in_longest_path[x], nodes_in_longest_path[x]))[0]
 
-def get_path(path, graph_dict, node, to_visit, frequency_dict, symbols_in_longest_path, nodes_in_longest_path):
-    """Appends to path the longest possible path in graph_dict starting at node"""
+def get_longest_path_item(items, symbols_in_longest_path, nodes_in_longest_path):
+    """Return the item that is at the root of the longest path, prioritizing the number
+    of symbols (a, b, c) and breaking ties with the total number of nodes in the path.
+    """
+    return sorted(
+        items,
+        reverse=True,
+        key=lambda x: (symbols_in_longest_path[x], nodes_in_longest_path[x], str(x)),
+    )[0]
+
+
+def get_path(
+    path,
+    graph_dict,
+    node,
+    to_visit,
+    frequency_dict,
+    symbols_in_longest_path,
+    nodes_in_longest_path,
+):
+    """Appends to path the longest possible path in graph_dict starting at node."""
     path.append(node)
     # Find viable neighbors that can be in the path
     adj = [a for a in graph_dict[node] if frequency_dict[(node, a)] != 0]
     if len(adj) >= 1:
         # Select the neighbor that will yield the longest path
-        next = get_longest_path_item(adj, symbols_in_longest_path, nodes_in_longest_path)
+        next = get_longest_path_item(
+            adj, symbols_in_longest_path, nodes_in_longest_path
+        )
         # Recursively get the path through that neighbor
-        get_path(path, graph_dict, next, to_visit, frequency_dict, symbols_in_longest_path, nodes_in_longest_path)
+        get_path(
+            path,
+            graph_dict,
+            next,
+            to_visit,
+            frequency_dict,
+            symbols_in_longest_path,
+            nodes_in_longest_path,
+        )
 
         # If there are other adjacent nodes, or this node has more paths going through it, we need to revisit it
-        if (len(adj) >= 2 or frequency_dict[(node, next)] >= 2):
+        if len(adj) >= 2 or frequency_dict[(node, next)] >= 2:
             to_visit.add(node)
 
-def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict):
-    """Calculates the number of symbols and nodes in the longest path reachable from node and stores them in symbols_in_longest_path and nodes_in_longest_path"""
+
+def count_nodes(
+    node, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict
+):
+    """Calculates the number of symbols and nodes in the longest path reachable from
+    node and stores them in symbols_in_longest_path and nodes_in_longest_path.
+    """
     # Already calculated
     if node in symbols_in_longest_path and node in nodes_in_longest_path:
         return (symbols_in_longest_path[node], nodes_in_longest_path[node])
 
     adj = [a for a in graph_dict[node] if frequency_dict[(node, a)] != 0]
-    cur_node_symbol_count = 1 if isinstance(node, str) else 0 # Indicates if the current node is a symbol
-    if not adj: # Base case if there are no neighbors
+    cur_node_symbol_count = (
+        1 if isinstance(node, str) else 0
+    )  # Indicates if the current node is a symbol
+    if not adj:  # Base case if there are no neighbors
         max_symbols_path = cur_node_symbol_count
         max_nodes_path = 1
-    else: # Calculate the paths recursively based on the maximum lengths of neighbor nodes
-        adj_maximums = [count_nodes(a, graph_dict, symbols_in_longest_path, nodes_in_longest_path, frequency_dict) for a in adj]
-        max_symbols_path = max(adj_maxes[0] for adj_maxes in adj_maximums) + cur_node_symbol_count
+    else:  # Calculate the paths recursively based on the maximum lengths of neighbor nodes
+        adj_maximums = [
+            count_nodes(
+                a,
+                graph_dict,
+                symbols_in_longest_path,
+                nodes_in_longest_path,
+                frequency_dict,
+            )
+            for a in adj
+        ]
+        max_symbols_path = (
+            max(adj_maxes[0] for adj_maxes in adj_maximums) + cur_node_symbol_count
+        )
         max_nodes_path = max(adj_maxes[1] for adj_maxes in adj_maximums) + 1
 
     # Update the graph and return
@@ -282,15 +343,27 @@ def count_nodes(node, graph_dict, symbols_in_longest_path, nodes_in_longest_path
     nodes_in_longest_path[node] = max_nodes_path
     return (max_symbols_path, max_nodes_path)
 
+
 def strip_path(path):
-    """Removes redundant constant comparisons at the ends of a path, e.g. simplies {a, 3, 0} to {a, 3}"""
+    """Removes redundant constant comparisons at the ends of a path, e.g. simplies {a,
+    3, 0} to {a, 3}.
+    """
     low = 0
     high = len(path) - 1
     if path and isinstance(path[0], (int, float)):
-        while low < len(path) - 1 and isinstance(path[low], (int, float)) and isinstance(path[low+1], (int, float)):
+        while (
+            low < len(path) - 1
+            and isinstance(path[low], (int, float))
+            and isinstance(path[low + 1], (int, float))
+        ):
             low += 1
 
     if path and isinstance(path[-1], (int, float)):
-        while high > 0 and high > low and isinstance(path[high], (int, float)) and isinstance(path[high-1], (int, float)):
+        while (
+            high > 0
+            and high > low
+            and isinstance(path[high], (int, float))
+            and isinstance(path[high - 1], (int, float))
+        ):
             high -= 1
-    return path[low:high+1]
+    return path[low : high + 1]

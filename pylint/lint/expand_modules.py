@@ -18,7 +18,7 @@ def _modpath_from_file(filename: str, is_namespace: bool, path: list[str]) -> li
     def _is_package_cb(inner_path: str, parts: list[str]) -> bool:
         return modutils.check_modpath_has_init(inner_path, parts) or is_namespace
 
-    return modutils.modpath_from_file_with_callback(
+    return modutils.modpath_from_file_with_callback(  # type: ignore[no-any-return]
         filename, path=path, is_package_cb=_is_package_cb
     )
 
@@ -82,10 +82,8 @@ def expand_modules(
             continue
         module_path = get_python_path(something)
         additional_search_path = [".", module_path] + path
-        if os.path.isfile(something) or os.path.exists(
-            os.path.join(something, "__init__.py")
-        ):
-            # this is a file or a directory with an explicit __init__.py
+        if os.path.exists(something):
+            # this is a file or a directory
             try:
                 modname = ".".join(
                     modutils.modpath_from_file(something, path=additional_search_path)
