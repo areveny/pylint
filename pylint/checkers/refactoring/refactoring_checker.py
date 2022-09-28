@@ -9,7 +9,7 @@ import copy
 import itertools
 import sys
 import tokenize
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from functools import reduce
 from re import Pattern
 from typing import TYPE_CHECKING, Any, NamedTuple, Union
@@ -1308,7 +1308,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             confidence=HIGH,
         )
 
-    def _check_comparisons(self, node: nodes.BoolOp):
+    def _check_comparisons(self, node: nodes.BoolOp) -> None:
         graph_info = self._get_graph_from_comparison_nodes(node)
         if not graph_info:
             return
@@ -1317,8 +1317,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             symbol_dict,
             indegree_dict,
             frequency_dict,
-        ) = self._get_graph_from_comparison_nodes(node)
-        cycles = get_cycles(graph_dict)
+        ) = graph_info
+
+        # Convert graph_dict to all strings to access the get_cycles API
+        str_dict = {
+            str(key): {str(dest) for dest in graph_dict[key]} for key in graph_dict
+        }
+        cycles = get_cycles(str_dict)
         if cycles:
             self._handle_cycles(node, symbol_dict, cycles)
             return
@@ -1337,19 +1342,32 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             args = " and ".join(sorted(suggestions))
             self.add_message("chained-comparison", node=node, args=(args,))
 
-    def _get_graph_from_comparison_nodes(self, node: nodes.BoolOp):
+    def _get_graph_from_comparison_nodes(
+        self, node: nodes.BoolOp
+    ) -> None | tuple[
+        dict[str | int | float, set[str | int | float]],
+        dict[tuple[str | int | float, str | int | float], str],
+        dict[str | int | float, int],
+        dict[tuple[str | int | float, str | int | float], int],
+    ]:
         if node.op != "and" or len(node.values) < 2:
-            return
+            return None
 
-        graph_dict = collections.defaultdict(set)
-        symbol_dict = collections.defaultdict(lambda: ">")
-        frequency_dict = collections.defaultdict(int)
-        indegree_dict = collections.defaultdict(int)
-        const_values: list[int] = []
+        graph_dict: dict[
+            str | int | float, set[str | int | float]
+        ] = collections.defaultdict(set)
+        symbol_dict: dict[
+            tuple[str | int | float, str | int | float], str
+        ] = collections.defaultdict(lambda: ">")
+        frequency_dict: dict[
+            tuple[str | int | float, str | int | float], int
+        ] = collections.defaultdict(int)
+        indegree_dict: dict[str | int | float, int] = collections.defaultdict(int)
+        const_values: list[int | float] = []
 
         for statement in node.values:
             if not isinstance(statement, nodes.Compare):
-                return
+                return None
             ops = list(statement.ops)
             left_statement = statement.left
             while ops:
@@ -1358,10 +1376,10 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 operator, right_statement = ops.pop(0)
                 # The operand is not a constant or variable or the operator is not a comparison
                 if operator not in {"<", ">", "==", "<=", ">="} or left is None:
-                    return
+                    return None
                 right = self._get_compare_operand_value(right_statement, const_values)
                 if right is None:
-                    return
+                    return None
 
                 # Make the graph always point from larger to smaller
                 if operator == "<":
@@ -1383,8 +1401,12 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 left_statement = right_statement
 
         # Nothing was added and we have no recommendations
-        if not graph_dict or not symbol_dict or all([val == "==" for val in symbol_dict.values()]):
-            return
+        if (
+            not graph_dict
+            or not symbol_dict
+            or all(val == "==" for val in symbol_dict.values())
+        ):
+            return None
 
         # Link up constant nodes, i.e. create synthetic nodes between 1 and 5 such that 5 > 1
         sorted_consts = sorted(const_values)
@@ -1406,18 +1428,22 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         return (graph_dict, symbol_dict, indegree_dict, frequency_dict)
 
     def _get_compare_operand_value(
-        self, node: nodes.Compare, const_values: Optional[set[int]] = None
-    ):
+        self, node: nodes.Compare, const_values: list[int | float]
+    ) -> str | int | float | None:
         value = None
-        if isinstance(node, nodes.Name):
+        if isinstance(node, nodes.Name) and isinstance(node.value, str):
             value = node.name
-        elif isinstance(node, nodes.Const):
+        elif isinstance(node, nodes.Const) and isinstance(node.value, (int, float)):
             value = node.value
             const_values.append(value)
-        # elif #Walrus
         return value
 
-    def _handle_cycles(self, node: nodes.BoolOp, symbol_dict, cycles):
+    def _handle_cycles(
+        self,
+        node: nodes.BoolOp,
+        symbol_dict: dict[tuple[str | int | float, str | int | float], str],
+        cycles: Sequence[list[str]],
+    ) -> None:
         for cycle in cycles:
             all_geq = all(
                 symbol_dict[(cycle[i], cycle[i + 1])] == ">="
