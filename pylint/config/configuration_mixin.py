@@ -2,6 +2,8 @@
 # For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
 # Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
 
+from __future__ import annotations
+
 import warnings
 from typing import Any
 
@@ -21,6 +23,7 @@ class ConfigurationMixIn(OptionsManagerMixIn, OptionsProviderMixIn):  # type: ig
         warnings.warn(
             "ConfigurationMixIn has been deprecated and will be removed in pylint 3.0",
             DeprecationWarning,
+            stacklevel=2,
         )
         if not args:
             kwargs.setdefault("usage", "")

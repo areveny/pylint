@@ -94,7 +94,7 @@ def test_global():
     variables through imports.
     """
     # pylint: disable=redefined-outer-name
-    global PATH, OS, collections, deque  # [global-variable-not-assigned, global-variable-not-assigned]
+    global PATH, OS, collections, deque  # [global-statement]
     from os import path as PATH
     import os as OS
     import collections
@@ -186,3 +186,16 @@ def sibling_except_handlers():
         pass
     except ValueError as e:
         print(e)
+
+def func6():
+    a = 1
+
+    def nonlocal_writer():
+        nonlocal a
+
+        for a in range(10):
+            pass
+
+    nonlocal_writer()
+
+    assert a == 9, a
