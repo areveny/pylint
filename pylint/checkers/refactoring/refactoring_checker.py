@@ -1391,7 +1391,8 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
                 # Update maps
                 graph_dict[left].add(right)
-                graph_dict[right]  # Ensure the node exists in graph
+                if not graph_dict[right]:
+                    graph_dict[right] = set()  # Ensure the node exists in graph
                 symbol_dict[(left, right)] = operator
                 indegree_dict[left] += 0  # Make sure every node has an entry
                 indegree_dict[right] += 1
@@ -1431,7 +1432,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         self, node: nodes.Compare, const_values: list[int | float]
     ) -> str | int | float | None:
         value = None
-        if isinstance(node, nodes.Name) and isinstance(node.value, str):
+        if isinstance(node, nodes.Name) and isinstance(node.name, str):
             value = node.name
         elif isinstance(node, nodes.Const) and isinstance(node.value, (int, float)):
             value = node.value
@@ -1446,8 +1447,8 @@ class RefactoringChecker(checkers.BaseTokenChecker):
     ) -> None:
         for cycle in cycles:
             all_geq = all(
-                symbol_dict[(cycle[i], cycle[i + 1])] == ">="
-                for (i, _) in enumerate(cycle)
+                symbol_dict[(cur_item, cycle[i + 1])] == ">="
+                for (i, cur_item) in enumerate(cycle)
                 if i < len(cycle) - 1
             )
             all_geq = all_geq and symbol_dict[cycle[-1], cycle[0]] == ">="

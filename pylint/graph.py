@@ -213,18 +213,19 @@ def _get_cycles(
         pass
     path.pop()
 
+node_types = str | int | float
 
 def get_paths(
-    graph_dict: dict[str | int | float, set[str | int | float]],
-    indegree_dict: dict[str | int | float, int],
-    frequency_dict: dict[tuple[str | int | float, str | int | float], int],
-) -> list[tuple[str | int | float]]:
+    graph_dict: dict[node_types, set[node_types]],
+    indegree_dict: dict[node_types, int],
+    frequency_dict: dict[tuple[node_types, node_types], int],
+) -> list[tuple[node_types]]:
     """Gets the minimum number of paths that span all the edges in graph_dict."""
     to_visit = {node for node in indegree_dict if indegree_dict[node] == 0}
     paths = set()
     while to_visit:
-        symbols_in_longest_path: dict[str | int | float, int] = {}
-        nodes_in_longest_path: dict[str | int | float, int] = {}
+        symbols_in_longest_path: dict[node_types, int] = {}
+        nodes_in_longest_path: dict[node_types, int] = {}
 
         # Count the longest possible paths rooted at each node
         for root in to_visit:
@@ -235,7 +236,7 @@ def get_paths(
                 nodes_in_longest_path,
                 frequency_dict,
             )
-        path: list[str | int | float] = []
+        path: list[node_types] = []
 
         # Get the node that can give us the longest path
         longest_path_item = get_longest_path_item(
@@ -259,16 +260,16 @@ def get_paths(
 
         path = strip_path(path)
         if len(path) > 1:
-            paths.add(path)
+            paths.add(tuple(path))
 
-    return sorted(list(paths))  # type: ignore[arg-type]
+    return sorted(list(paths), key = str)  # type: ignore[arg-type]
 
 
 def get_longest_path_item(
-    items: set[str | int | float],
-    symbols_in_longest_path: dict[str | int | float, int],
-    nodes_in_longest_path: dict[str | int | float, int],
-) -> str | int | float:
+    items: set[node_types],
+    symbols_in_longest_path: dict[node_types, int],
+    nodes_in_longest_path: dict[node_types, int],
+) -> node_types:
     """Return the item that is at the root of the longest path, prioritizing the number
     of symbols (a, b, c) and breaking ties with the total number of nodes in the path.
 
@@ -282,13 +283,13 @@ def get_longest_path_item(
 
 
 def get_path(
-    path: list[str | int | float],
-    graph_dict: dict[str | int | float, set[str | int | float]],
-    node: str | int | float,
-    to_visit: set[str | int | float],
-    frequency_dict: dict[tuple[str | int | float, str | int | float], int],
-    symbols_in_longest_path: dict[str | int | float, int],
-    nodes_in_longest_path: dict[str | int | float, int],
+    path: list[node_types],
+    graph_dict: dict[node_types, set[node_types]],
+    node: node_types,
+    to_visit: set[node_types],
+    frequency_dict: dict[tuple[node_types, node_types], int],
+    symbols_in_longest_path: dict[node_types, int],
+    nodes_in_longest_path: dict[node_types, int],
 ) -> None:
     """Appends to path the longest possible path in graph_dict starting at node."""
     path.append(node)
@@ -316,11 +317,11 @@ def get_path(
 
 
 def count_nodes(
-    node: str | int | float,
-    graph_dict: dict[str | int | float, set[str | int | float]],
-    symbols_in_longest_path: dict[str | int | float, int],
-    nodes_in_longest_path: dict[str | int | float, int],
-    frequency_dict: dict[tuple[str | int | float, str | int | float], int],
+    node: node_types,
+    graph_dict: dict[node_types, set[node_types]],
+    symbols_in_longest_path: dict[node_types, int],
+    nodes_in_longest_path: dict[node_types, int],
+    frequency_dict: dict[tuple[node_types, node_types], int],
 ) -> tuple[int, int]:
     """Calculates the number of symbols and nodes in the longest path reachable from
     node and stores them in symbols_in_longest_path and nodes_in_longest_path.
@@ -358,7 +359,7 @@ def count_nodes(
     return (max_symbols_path, max_nodes_path)
 
 
-def strip_path(path: list[str | int | float]) -> list[str | int | float]:
+def strip_path(path: list[node_types]) -> list[node_types]:
     """Removes redundant constant comparisons at the ends of a path, e.g. simplies {a,
     3, 0} to {a, 3}.
     """
